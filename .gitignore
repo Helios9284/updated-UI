@@ -1,0 +1,9 @@
+/__pycache__/
+/.venv/
+/venv/
+/subnet_fetch_venv/
+/frontend-react/node_modules/
+/frontend-react/dist/
+/frontend-react/package-lock.json
+/frontend-react/.env.development
+.env

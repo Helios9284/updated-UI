@@ -1,0 +1,110 @@
+:root,
+[data-theme="dark"] {
+  /* Golden accents on original neutral dark background */
+  --bg: #14161a;
+  --card: #1c1f26;
+  --card-elevated: #23262d;
+  --line: #3a404c;
+  --line-soft: rgba(212, 175, 55, 0.28);
+  --text: #e8eaed;
+  --text-strong: #f3f4f6;
+  --muted: #9aa3b2;
+  --gold: #d4af37;
+  --gold-bright: #f0c85a;
+  --gold-dim: #9a7b28;
+  --accent: #e8b923;
+  --accent-hover: #f5d060;
+  --accent-soft-bg: rgba(212, 175, 55, 0.12);
+  --accent-soft-border: rgba(212, 175, 55, 0.48);
+  --ok: #8fd67a;
+  --warn: #f0c14b;
+  --bad: #ff9a88;
+  --thead-bg: #252830;
+  --placeholder-bg: rgba(18, 20, 24, 0.72);
+  --overlay: rgba(18, 20, 24, 0.72);
+  --focus-ring: #d4af37;
+  --shadow-gold: rgba(212, 175, 55, 0.14);
+
+  /* Typography — style only (sizes stay in component CSS) */
+  --font-ui: "Outfit", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Semantic row / badge colors (readable on warm dark bg) */
+  --color-add: #a8e878;
+  --color-remove: #ffaa99;
+  --color-transfer: #e0b8ff;
+  --color-mev: #d4b4ff;
+  --color-info: #f5e0a8;
+  --color-highlight: #ffe08a;
+  --color-error: #ffb8a8;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  font-style: normal;
+  font-variant-numeric: proportional-nums;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+.panel-title,
+.topbar h1,
+.bots-drawer-title,
+.transfer-sidebar-title,
+.subnet-modal-title {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.05em;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.35);
+  color: var(--text-strong);
+}
+
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

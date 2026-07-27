@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "poll_interval_ms": 40,
+  "process_count": 4,
+  "slot_gap_ms": 10,
+  "last_poll_ms": 1782693190294,
+  "last_poll_pid": 0,
+  "next_pid": 1,
+  "seq": 1925
+}

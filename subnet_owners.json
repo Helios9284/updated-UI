@@ -1,0 +1,781 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-24T17:53:28.825628+00:00",
+  "block_number": 8693285,
+  "subnets": {
+    "0": {
+      "netuid": 0,
+      "subnet_name": "root",
+      "owner_coldkey": "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
+      "owner_hotkey": "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM"
+    },
+    "1": {
+      "netuid": 1,
+      "subnet_name": "Apex",
+      "owner_coldkey": "5HCFWvRqzSHWRPecN7q8J6c7aKQnrCZTMHstPv39xL1wgDHh",
+      "owner_hotkey": "5HCFWvRqzSHWRPecN7q8J6c7aKQnrCZTMHstPv39xL1wgDHh"
+    },
+    "2": {
+      "netuid": 2,
+      "subnet_name": "DSperse",
+      "owner_coldkey": "5EcYQ3W77ndrmMWdvVQusoFqY8doxfP3U2zrh7xZQiaz7avY",
+      "owner_hotkey": "5CFxLBvpyQq3TCP7zLcu8dLcPBxhA6MdLvXiCyvJVojuK17J"
+    },
+    "3": {
+      "netuid": 3,
+      "subnet_name": "deprecated",
+      "owner_coldkey": "5FUJoAsY5TWfs1FGFtscC5QUuarJMCWYwYzEftyGAeH7pUqK",
+      "owner_hotkey": "5HdTZQ6UXD7MWcRsMeExVwqAKKo4UwomUd662HvtXiZXkxmv"
+    },
+    "4": {
+      "netuid": 4,
+      "subnet_name": "Targon",
+      "owner_coldkey": "5CXGPMnq9RCCLUEvp9G2iUuabw69TSFM155UVS1S4Zmusaxv",
+      "owner_hotkey": "5Hp18g9P8hLGKp9W3ZDr4bvJwba6b6bY3P2u3VdYf8yMR8FM"
+    },
+    "5": {
+      "netuid": 5,
+      "subnet_name": "Hone",
+      "owner_coldkey": "5GurNtB3yQFCh6CSmfH7LrYJDsvzup4diHZiaYtKe274nrMX",
+      "owner_hotkey": "5GZ2KuT2TtLbYTtsMcgAtazo6KQ4bc57ykZgyQv9oit3y7iq"
+    },
+    "6": {
+      "netuid": 6,
+      "subnet_name": "Numinous",
+      "owner_coldkey": "5CfSg4e23Z3aTXvc2XZie8ZE1xkqRPoyVRFdWUuyyjGxJrMA",
+      "owner_hotkey": "5CfSg4e23Z3aTXvc2XZie8ZE1xkqRPoyVRFdWUuyyjGxJrMA"
+    },
+    "7": {
+      "netuid": 7,
+      "subnet_name": "Allways",
+      "owner_coldkey": "5CAc19iETJmWD2rYVX1ht58ghCpyHq86MoBNdx5TzLfinzcx",
+      "owner_hotkey": "5ChTwrqwqeHpX8rLw73oDWXRjTfz83U4p3kRuKgvEfAEt8EE"
+    },
+    "8": {
+      "netuid": 8,
+      "subnet_name": "Vanta",
+      "owner_coldkey": "5F6tnxzAAxbhaWRmeUmB63JEM3VXBNSmqb3AwYJVDStQjw8y",
+      "owner_hotkey": "5F6tnxzAAxbhaWRmeUmB63JEM3VXBNSmqb3AwYJVDStQjw8y"
+    },
+    "9": {
+      "netuid": 9,
+      "subnet_name": "iota",
+      "owner_coldkey": "5FsbubeciqtB5Nik3umL2iD4fG8FcC9GbT9nHJfXMj4mJJZ9",
+      "owner_hotkey": "5FsbubeciqtB5Nik3umL2iD4fG8FcC9GbT9nHJfXMj4mJJZ9"
+    },
+    "10": {
+      "netuid": 10,
+      "subnet_name": "Swap",
+      "owner_coldkey": "5EnqKvH9oCTzzokdLx6CzRoXqi9iJo4JKtQzaHi5LjvufcZr",
+      "owner_hotkey": "5EvNESR7DfSMmdwJ3crtBW1ENAhq3f99X4FCbTi1hDUNCWAW"
+    },
+    "11": {
+      "netuid": 11,
+      "subnet_name": "TrajectoryRL",
+      "owner_coldkey": "5D2Jhtbnm7iAdKfjRk6DisXBnr1MEsYat8kXqaPNrVqJP3uE",
+      "owner_hotkey": "5ECzcM7sixWNEeD6RbpeEHW1YcYMFejwHuvDBgQxVSjGyrMS"
+    },
+    "12": {
+      "netuid": 12,
+      "subnet_name": "Compute Horde",
+      "owner_coldkey": "5ELzhHvgUqmnAYs74vFWjMMehXNeHkRtkreAa3g8QQS96PCp",
+      "owner_hotkey": "5ELzhHvgUqmnAYs74vFWjMMehXNeHkRtkreAa3g8QQS96PCp"
+    },
+    "13": {
+      "netuid": 13,
+      "subnet_name": "Data Universe",
+      "owner_coldkey": "5HBswBt1A9Ahx6U76abXXGd7VmabmCNBGhSK2vrP71GSxtgZ",
+      "owner_hotkey": "5HBswBt1A9Ahx6U76abXXGd7VmabmCNBGhSK2vrP71GSxtgZ"
+    },
+    "14": {
+      "netuid": 14,
+      "subnet_name": "Cacheon",
+      "owner_coldkey": "5CKhH8nKAhXLmqxwaXzFtVFgxqwwnyckXG8qLpmGtzVJH9Ri",
+      "owner_hotkey": "5GKYWndSE6tnrQD4J6pZt13nhovWWM2W6Jkh3XQTXTfkgLDN"
+    },
+    "15": {
+      "netuid": 15,
+      "subnet_name": "ORO",
+      "owner_coldkey": "5GMtrkkvybJiWpo5boj5oVfKmGVgcrghwuubAytsny5LzycW",
+      "owner_hotkey": "5DnqbBi4tYQZVR8DySJvmQ4gcEN94piu8hH6NiwnFzQxT5FW"
+    },
+    "16": {
+      "netuid": 16,
+      "subnet_name": "Fast Thinker",
+      "owner_coldkey": "5G69VLQUBS9fFL8xfLEtCj89sZMtTVRgMLTzkvmKsqcxoBCB",
+      "owner_hotkey": "5ECWmM21HNE834eB296ZDR8aBMW5psWcD5eJhFzdowKyrbNW"
+    },
+    "17": {
+      "netuid": 17,
+      "subnet_name": "404—GEN",
+      "owner_coldkey": "5E7a4a7QETrNjoZ2SbVSJMaavrQeyTEaHgjBPDUDxBKjUaMZ",
+      "owner_hotkey": "5E7eSeRr2aHzCV7SkY4a2Pi5NXHrU4anZz3phEQgn4HCen2B"
+    },
+    "18": {
+      "netuid": 18,
+      "subnet_name": "Zeus",
+      "owner_coldkey": "5DHwWLjtpwnZQUQKKXE2N5Gdy2N8PpqhgjLUuzgSB7yuGZkF",
+      "owner_hotkey": "5HdrwVQQbMa8Wh271PDzvMHmM44wYM5wfnXCW3o97gDisuaY"
+    },
+    "19": {
+      "netuid": 19,
+      "subnet_name": "blockmachine",
+      "owner_coldkey": "5FWh37LfVV5LE9dZA91STzbtebh6vxYa3MH71c621sYafo1L",
+      "owner_hotkey": "5CK49hDJcseEk1V7iB1dmmztdw4igafhxLsVN82VtUVAQRfC"
+    },
+    "20": {
+      "netuid": 20,
+      "subnet_name": "ChronoSeek",
+      "owner_coldkey": "5FuzgvtfbZWdKSRxyYVPAPYNaNnf9cMnpT7phL3s2T3Kkrzo",
+      "owner_hotkey": "5EALa14jRfwHf69ZbNyFLxsPrZgZ47T2qhYxGjXxRM1qriNk"
+    },
+    "21": {
+      "netuid": 21,
+      "subnet_name": "AdTAO",
+      "owner_coldkey": "5HjCYVfrWSkzTfJM5rkWBW3qTTJqXEFUzZrKty5hodpgfjyW",
+      "owner_hotkey": "5EqAzby1upPkqpba5qrbDLZtFLmaTUe2PRbzih62voorQVHp"
+    },
+    "22": {
+      "netuid": 22,
+      "subnet_name": "Desearch",
+      "owner_coldkey": "5DFuaMasyQtPhXcsuoYEyJmCVSRtzKxsTKFTA4SrpcGXBxJn",
+      "owner_hotkey": "5CUu1QhvrfyMDBELUPJLt4c7uJFbi7TKqDHkS1Zz41oD4dyP"
+    },
+    "23": {
+      "netuid": 23,
+      "subnet_name": "Trishool",
+      "owner_coldkey": "5CqTRwoFmme25YAbbwovR9rEic1UY7hYBLHxSk1PSfZ2jpmN",
+      "owner_hotkey": "5HKsvivbcTKKTJEWQpsQD5Fur8CdyibHwZb8xQzrJw5rM28H"
+    },
+    "24": {
+      "netuid": 24,
+      "subnet_name": "Quasar",
+      "owner_coldkey": "5EjSHN7ZH4y21tgf8ACe5WtRQYvoWdLS6xsYvBktEycbmKYi",
+      "owner_hotkey": "5GE25P2qGpGmjzGipqezZckMvyR2mpcsJS387bbcpitNSfm5"
+    },
+    "25": {
+      "netuid": 25,
+      "subnet_name": "Mainframe",
+      "owner_coldkey": "5F6aRdsBHajN2NhZHBTB6ibBFu7YuZZEWruWzB8x6B6GiZ4D",
+      "owner_hotkey": "5F6aRdsBHajN2NhZHBTB6ibBFu7YuZZEWruWzB8x6B6GiZ4D"
+    },
+    "26": {
+      "netuid": 26,
+      "subnet_name": "Perturb",
+      "owner_coldkey": "5FsVAEPMpkAo3eP7xTNJYLyBndi2oT5GPxVPzFT1DzSD82qx",
+      "owner_hotkey": "5EHfTi6RWouYP7YQD5tXgm56SgeC1Wp7xS7BVG6uCRWw3fvP"
+    },
+    "27": {
+      "netuid": 27,
+      "subnet_name": "Orion",
+      "owner_coldkey": "5CopvHeTZHNy6RMztuRFvViwwZbsZaVkJPA9zmRRnPAna73M",
+      "owner_hotkey": "5H6BqkzjYvViiqp7rQLXjpnaEmW7U9CoKxXhQ4efMqtX1mQw"
+    },
+    "28": {
+      "netuid": 28,
+      "subnet_name": "gm",
+      "owner_coldkey": "5CA6rwAytZvvyZhLYEzo79627QEV422Q8kD51DEnTaRQxm45",
+      "owner_hotkey": "5Evgh9QTXJLxYLusVy3tcY5S6Z3GgRSNDb9AzXUchX5dco3P"
+    },
+    "29": {
+      "netuid": 29,
+      "subnet_name": "hoτfloaτ",
+      "owner_coldkey": "5HHHHHzgLnYRvnKkHd45cRUDMHXTSwx7MjUzxBrKbY4JfZWn",
+      "owner_hotkey": "5HHHHHzgLnYRvnKkHd45cRUDMHXTSwx7MjUzxBrKbY4JfZWn"
+    },
+    "30": {
+      "netuid": 30,
+      "subnet_name": "Endure Network",
+      "owner_coldkey": "5HTogQKFuDaLq5ifWNhL2owMpLPHM3TAmujUUaTVj7FWzf6p",
+      "owner_hotkey": "5HW12NvEZoGz8ZzcWMh4xyDUy6H1Af85m5LB8V1L11erK1S1"
+    },
+    "31": {
+      "netuid": 31,
+      "subnet_name": "rec4ll",
+      "owner_coldkey": "5H3mfhC8DS853nezGzh73rRnrFqPaPXtaCR8jDtgkSCHrfvb",
+      "owner_hotkey": "5CDZ527X1CiStK1ViGkbC4EjVoouwiGW4ijRKRFfrLpQfftn"
+    },
+    "32": {
+      "netuid": 32,
+      "subnet_name": "ItsAI",
+      "owner_coldkey": "5DWgkCSvq4brWSNLDU9FBgTk1ZpAQ2y6t3ky97CvEVuS9Qad",
+      "owner_hotkey": "5DWgkCSvq4brWSNLDU9FBgTk1ZpAQ2y6t3ky97CvEVuS9Qad"
+    },
+    "33": {
+      "netuid": 33,
+      "subnet_name": "ReadyAI",
+      "owner_coldkey": "5HinUfk5SqBUAbkMtgdNoum3VJvwrLgdvwW5sbXA1UPYZ8uB",
+      "owner_hotkey": "5HinUfk5SqBUAbkMtgdNoum3VJvwrLgdvwW5sbXA1UPYZ8uB"
+    },
+    "34": {
+      "netuid": 34,
+      "subnet_name": "BitMind",
+      "owner_coldkey": "5DthmKBR83sUdudSfgFnsxBkTYtYTFLJUgovNfb1TSKVLiTH",
+      "owner_hotkey": "5HjBSeeoz52CLfvDWDkzupqrYLHz1oToDPHjdmJjc4TF68LQ"
+    },
+    "35": {
+      "netuid": 35,
+      "subnet_name": "OxMarkets",
+      "owner_coldkey": "5EqZVDbW5sKXE5qB5zVaH6SQT2sud3LkmFBo2dn79NdY9RTr",
+      "owner_hotkey": "5EsmkLf4VnpgNM31syMjAWsUrQdW2Yu5xzWbv6oDQydP9vVx"
+    },
+    "36": {
+      "netuid": 36,
+      "subnet_name": "Leoma",
+      "owner_coldkey": "5GLGTwG6n4dFPMwcN5BWJ1tw7fwcgQsjxCV4xb5ft3vKLUxc",
+      "owner_hotkey": "5Eh5G8BD8NVHfqeWdKhNbrssDKKV8B74a2VghHzr2YYWrwmK"
+    },
+    "37": {
+      "netuid": 37,
+      "subnet_name": "Aurelius",
+      "owner_coldkey": "5GRBbS3aDep7cvR1NRm9Awp5HAF1o4HC7t59Y8HoheLZ6ZaP",
+      "owner_hotkey": "5DXqqdrvu5FK3dASRVTCdGPZKx4Q9nkAZZSmibKG6PEEeW4j"
+    },
+    "38": {
+      "netuid": 38,
+      "subnet_name": "ChronoLLM",
+      "owner_coldkey": "5GeWgtBAu2ezYo83sPM7VyEigAfEc3vnqqxRzbMXYVYwEV62",
+      "owner_hotkey": "5HNjFeSd7hNgn2iWGPcreRNVBPcreJsaEr6HWdvr4FpgBp1n"
+    },
+    "39": {
+      "netuid": 39,
+      "subnet_name": "deprecated",
+      "owner_coldkey": "5CQKh1G5MKRyBEPCY7cHRW1okvj2LxjK94cgjsD9c24wrpCN",
+      "owner_hotkey": "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC"
+    },
+    "40": {
+      "netuid": 40,
+      "subnet_name": "Ralph",
+      "owner_coldkey": "5HeKCDfdTyk5gttniUXWVGvf6xSpbJJG86thJcZnqNZjThoU",
+      "owner_hotkey": "5HijSRHd9wUmk51UE8Kia7vmx6kD2jwqJLn9bY1frQ4aiTUs"
+    },
+    "41": {
+      "netuid": 41,
+      "subnet_name": "Almanac",
+      "owner_coldkey": "5FCSevLkofmKZRixMawp6jyyjBty1AeSCLa7N5Fv892DYkXX",
+      "owner_hotkey": "5FCSevLkofmKZRixMawp6jyyjBty1AeSCLa7N5Fv892DYkXX"
+    },
+    "42": {
+      "netuid": 42,
+      "subnet_name": "Unknown",
+      "owner_coldkey": "5EC5HHfLqgmr8cdt2MAW5nJMG9n3jKF1QhZb1gYTgiJGNMo5",
+      "owner_hotkey": "5Gbdb5s2WrRaFXTgMUiVNBKACe3cgSLwZNyK2Vwvjfvf6jUJ"
+    },
+    "43": {
+      "netuid": 43,
+      "subnet_name": "Graphite",
+      "owner_coldkey": "5HjMs5JDrLH3Hknmfm1gDq7nFYAv6M7t9v3EWMctSRXJS9HC",
+      "owner_hotkey": "5HjMs5JDrLH3Hknmfm1gDq7nFYAv6M7t9v3EWMctSRXJS9HC"
+    },
+    "44": {
+      "netuid": 44,
+      "subnet_name": "Score",
+      "owner_coldkey": "5CaCekuxb9pKQyLoxh3jbkEXig8fxjkeS4AQ6UmZa12xfQ9H",
+      "owner_hotkey": "5FsREvyUXSZWYRqVyQLDdpYmZZPnkhZyW6HjooozKP1nQkwu"
+    },
+    "45": {
+      "netuid": 45,
+      "subnet_name": "AlphaRidge.ai",
+      "owner_coldkey": "5FbcZiAHA75i2bPVrF7wa9mFaxV1eM27HR63kJtbpb8spvmf",
+      "owner_hotkey": "5Hmiaz4bLLbLw4LgTksJvJYPYp1XJ1GYkUfRiv4HGXX674DD"
+    },
+    "46": {
+      "netuid": 46,
+      "subnet_name": "Zipcode",
+      "owner_coldkey": "5Ft9E2ovN52AVMczVA3713uXmmBPczvUboB4YQpupu3aEYg7",
+      "owner_hotkey": "5CDnZ6oeCrXKoL2VJQuQFxSfr49yQWz2DvdaYx47hr9QdM6D"
+    },
+    "47": {
+      "netuid": 47,
+      "subnet_name": "EvolAI",
+      "owner_coldkey": "5DDKR8DVDQ4UaAprFR5gfc6WXFgk3cG6WmBpdKZ8Eah4Z6Mu",
+      "owner_hotkey": "5GjN9n3ndtbRTir5HCRsaaFjxfoQpffnYsAc5VG9iWMfdEWj"
+    },
+    "48": {
+      "netuid": 48,
+      "subnet_name": "Quantum Compute",
+      "owner_coldkey": "5GNH5YMkcX8jEF1PukvxKafifcqz13jp18BT73jRL3AZc4Rc",
+      "owner_hotkey": "5D2Qc9ud7vTJrPzk8mT1ruY8oV8UaDP3ttepD7zVNNi943ch"
+    },
+    "49": {
+      "netuid": 49,
+      "subnet_name": "Nepher Robotics",
+      "owner_coldkey": "5FL781vfkLNnYBUi58JnhZ3r2waHDMiehxRhzcMaMWvKDfXf",
+      "owner_hotkey": "5DLYBBCdYwBgjJi76dHJuAU7tUb7rNHJmNtpYRmBesBnrAgn"
+    },
+    "50": {
+      "netuid": 50,
+      "subnet_name": "Synth",
+      "owner_coldkey": "5DxyiWpGqN5xXiczXcEGph51BcgTqcYKD5GKZqoACuc2sJkD",
+      "owner_hotkey": "5DxyiWpGqN5xXiczXcEGph51BcgTqcYKD5GKZqoACuc2sJkD"
+    },
+    "51": {
+      "netuid": 51,
+      "subnet_name": "lium.io",
+      "owner_coldkey": "5FqACMtcegZxxopgu1g7TgyrnyD8skurr9QDPLPhxNQzsThe",
+      "owner_hotkey": "5FTVrwEpjvpNeKwczFtYjs62GHKKLHLCdqCThtj2unZouKg1"
+    },
+    "52": {
+      "netuid": 52,
+      "subnet_name": "Dojo",
+      "owner_coldkey": "5Fv1ZvNPsEvUN6jfia6Mv3ZoefZ6KdoowGMjkPMX61QwRLXx",
+      "owner_hotkey": "5EgfUiH6A99dhihMzp7eMM8UDkvmFjCWgM5gnpBN8UgLrVuz"
+    },
+    "53": {
+      "netuid": 53,
+      "subnet_name": "engy",
+      "owner_coldkey": "5H8SFVCxk52ag1YSC5bQw7B84NRNhAtYWAP81jEPfuJ3VL8Q",
+      "owner_hotkey": "5DXSBCCKH5ENuyHFNaAvtaMfbhEEWpjSJB4rzc4mJfsc1uvJ"
+    },
+    "54": {
+      "netuid": 54,
+      "subnet_name": "Yanez MIID",
+      "owner_coldkey": "5FUfruyVDoDsCty1Sh7tCmHVdpoC3XV1nUZYjhcpfe31Defk",
+      "owner_hotkey": "5DUB7kNLvvx8Dj7D8tn54N1C7Xok6GodNPQE2WECCaL9Wgpr"
+    },
+    "55": {
+      "netuid": 55,
+      "subnet_name": "NIOME",
+      "owner_coldkey": "5GeWUxaFP6duJyNg8EUv6Jfcv6ZNkoERywAcbSw4FAuEMpDq",
+      "owner_hotkey": "5DJ5fT174AY8GzbYHnamYQCJd4cTcj2Zf7ogUvBhry1KfYVd"
+    },
+    "56": {
+      "netuid": 56,
+      "subnet_name": "Gradients",
+      "owner_coldkey": "5EJ1zbdwhumTRYFx3VCGnR6SW7CJWP28tEJCo2gw1dFbVL5g",
+      "owner_hotkey": "5GU4Xkd3dCGTU3s8VLcHGc5wsD5M8XyxDca5yDQhYm1mVXFu"
+    },
+    "57": {
+      "netuid": 57,
+      "subnet_name": "gaia",
+      "owner_coldkey": "5HdpnCSYczg52ZaiBKmgwJPFnVpyyu27o1GHgLcj8217xxr7",
+      "owner_hotkey": "5Ejcqsbx3MFhNqiDjPJVvBtYWNvXXcvSJ3ibMCrzfCU3g5MN"
+    },
+    "58": {
+      "netuid": 58,
+      "subnet_name": "greevils",
+      "owner_coldkey": "5CLUzEqecEfGFxMwHSU5vbgzpFQCGZuC56DDX354JKe69gtJ",
+      "owner_hotkey": "5EPXZrLxMmV2ShUFXvffdGXZoyUrYwEKMHZbVfmPnmjJ3GHz"
+    },
+    "59": {
+      "netuid": 59,
+      "subnet_name": "Babelbit",
+      "owner_coldkey": "5DkPyHKTXK3eTJarh2hAL4FnkpQ5k7QivRucY8yXVN1wug4y",
+      "owner_hotkey": "5EF9dnwEup1QD1vAg6j9Z7yqYKbpQSMK2Rax2JhhUEFjNdve"
+    },
+    "60": {
+      "netuid": 60,
+      "subnet_name": "Bitsec.ai",
+      "owner_coldkey": "5CXLwkK1Scd1uiMUrXYjJUTTPxqqyH2FTJQNLp9uXQhA9rhR",
+      "owner_hotkey": "5CXLwkK1Scd1uiMUrXYjJUTTPxqqyH2FTJQNLp9uXQhA9rhR"
+    },
+    "61": {
+      "netuid": 61,
+      "subnet_name": "RedTeam",
+      "owner_coldkey": "5ECEsYL82fbXx9KfTZy7G2KXSurnScciJyAVMHZjekc8jUbn",
+      "owner_hotkey": "5ECEsYL82fbXx9KfTZy7G2KXSurnScciJyAVMHZjekc8jUbn"
+    },
+    "62": {
+      "netuid": 62,
+      "subnet_name": "Ridges",
+      "owner_coldkey": "5DhsVYewpCdQQUenHU52k5Cys1WsTWTt5V5m84D3n4L8FWDS",
+      "owner_hotkey": "5EsNzkZ3DwDqCsYmSJDeGXX51dQJd5broUCH6dbDjvkTcicD"
+    },
+    "63": {
+      "netuid": 63,
+      "subnet_name": "Enigma",
+      "owner_coldkey": "5CqTmNfgDchxULD1bfoz8jvj9rDYSoq76kiq98oBUUEDpWqX",
+      "owner_hotkey": "5GmpedVP2r9haksUBD743wek8t89jMz96RTkV2zkVdRR4e1B"
+    },
+    "64": {
+      "netuid": 64,
+      "subnet_name": "Chutes",
+      "owner_coldkey": "5FRYKhbmfXPDoHdUUDMx27E3HuMvAzwjzFMMq3rNurUhAyS9",
+      "owner_hotkey": "5CS3g6nVJM6ouns8n9buN9CzFf2C1YDHVcVGRcxoirKs2xbV"
+    },
+    "65": {
+      "netuid": 65,
+      "subnet_name": "TAO Private Network",
+      "owner_coldkey": "5GxEEHxLWpvcAGghL8LG7xNjrxZk4SEPW1VT43hGPZ2TP9mZ",
+      "owner_hotkey": "5DAmVrUgpTX9xmRyZ7R3UUFNSzh7ZNY6qYxv9N4VeCq6mHHL"
+    },
+    "66": {
+      "netuid": 66,
+      "subnet_name": "ninja",
+      "owner_coldkey": "5HNPKWTEmc8PCajPyGpRnqn1ZNXxGeiZpidan7NMQWUrUVWP",
+      "owner_hotkey": "5DRPoRiBSPNvgSvRsehaUhtXqPgXYrds8VS42vdzT5MzcpZV"
+    },
+    "67": {
+      "netuid": 67,
+      "subnet_name": "Harnyx",
+      "owner_coldkey": "5HEAv3TU1yNei4GwiTsxfmDCDW9pMCKLeDVky9iaVJfYiVeY",
+      "owner_hotkey": "5Cm4fATsr3S1AUX9WTkwaV1qiYtzPVdRpLWSEDmvvEkoT7Rt"
+    },
+    "68": {
+      "netuid": 68,
+      "subnet_name": "NOVA",
+      "owner_coldkey": "5EcdJLAeYoxM3Tsf5VZ3NQPenPku218gqnjSoo3iJNy4V12V",
+      "owner_hotkey": "5CSuegTfX4Gf7SoXXJoPEyMEicXBjm5Z1QgoPPcU424rQbbb"
+    },
+    "69": {
+      "netuid": 69,
+      "subnet_name": "Herald",
+      "owner_coldkey": "5HBPFVcJxuhT6PFg93s5B5qa9GZjMQWRBWWEssZMDAMmRAvc",
+      "owner_hotkey": "5FWB5CFZQB4FcmekEXrXtoGgjFt37HGQk27JzWKkRzqWjkg5"
+    },
+    "70": {
+      "netuid": 70,
+      "subnet_name": "NexisGen",
+      "owner_coldkey": "5HisJVRY5s72aGFqcvemjk2AzdQnPhbTcMjWDecWZKtoCqj9",
+      "owner_hotkey": "5EJGfSvRcEGVQtqDuU7YYwuZRHmaktf6JEZDeFPyeXksiHrm"
+    },
+    "71": {
+      "netuid": 71,
+      "subnet_name": "Leadpoet",
+      "owner_coldkey": "5DwHzMhBXPGPSSxnPzp3J8Y12UyYmU17nppQ8oHum6yrRjSk",
+      "owner_hotkey": "5FNVgRnrxMibhcBGEAaajGrYjsaCn441a5HuGUBUNnxEBLo9"
+    },
+    "72": {
+      "netuid": 72,
+      "subnet_name": "StreetVision by NATIX",
+      "owner_coldkey": "5HTYVBxrF2WbVN8RBtFxAkBGuHJxjgLd9Sze5gxH4KC6GLCv",
+      "owner_hotkey": "5Fmvr2VJs9EpyR5NbNpLTKgEXS8fRnQA6F349xqswsz6VL88"
+    },
+    "73": {
+      "netuid": 73,
+      "subnet_name": "Parked",
+      "owner_coldkey": "5Fvs6HPWUKNkqQka8yZi1anaTu339fKVws64BnJBRTQhKzak",
+      "owner_hotkey": "5Dnkprjf9fUrvWq3ZfFP8WrUNSjQws6UoHkbDfR1bQK8pFhW"
+    },
+    "74": {
+      "netuid": 74,
+      "subnet_name": "Gittensor",
+      "owner_coldkey": "5D1VXeeSdrfyrBdMe4SNwKnRsmzrjXES9dhx6kQkCHhJUPvS",
+      "owner_hotkey": "5Dnffftud49iScqvvymjuvS4D1MP4ApenAQG2R5wg4bXGH7L"
+    },
+    "75": {
+      "netuid": 75,
+      "subnet_name": "Hippius",
+      "owner_coldkey": "5DAQpczEK4vzBn1waHkC4BZGqGPZ1dwPxKVsj36JDofHAw3a",
+      "owner_hotkey": "5G1Qj93Fy22grpiGKq6BEvqqmS2HVRs3jaEdMhq9absQzs6g"
+    },
+    "76": {
+      "netuid": 76,
+      "subnet_name": "Phylax",
+      "owner_coldkey": "5FFNhWd881QTWuuiDgkqW4vgiWFDW1QYqPwRB9MZUkH7cMUP",
+      "owner_hotkey": "5Cw4E2tJjsx1mxGaxpJHEAS9fEgjZQt7r7DeHhZ1Ce6yu5cs"
+    },
+    "77": {
+      "netuid": 77,
+      "subnet_name": "Liquidity",
+      "owner_coldkey": "5GxxsUeYRyJSJKCuPeG1jZZiCummHJttmTNsfgDRSfxVnhGi",
+      "owner_hotkey": "5DqALXRZumwGDyaJWRJ2fMzBqPxEuoqWypnexcwuYMDdohsE"
+    },
+    "78": {
+      "netuid": 78,
+      "subnet_name": "Vocence",
+      "owner_coldkey": "5FnQCJW2Rm1BijNBUJzPetcpZx43RWutYiyaxA8j88fy9i9L",
+      "owner_hotkey": "5Fk765B4CRBekwErwE5VxvveWhHztHSfsnsLt8cbDayDWsuk"
+    },
+    "79": {
+      "netuid": 79,
+      "subnet_name": "MVTRX",
+      "owner_coldkey": "5Fxp7QBG81X7PLdMkAe1RLCvqqfQSw9rJC5ppEQs9FP8qez9",
+      "owner_hotkey": "5EWwdZB7qCCMaAso5Mzcks4UUcPxKYvpAj32t5Mg1v6HSxoF"
+    },
+    "80": {
+      "netuid": 80,
+      "subnet_name": "unknown",
+      "owner_coldkey": "5CG1eFiaZkWTCUEjD23i7Uiu6AjTkLkgkCu3EyXKFFAkkT2T",
+      "owner_hotkey": "5HTwtytUfeUhK4p8NRCGppjUZrhJ5ckoRHeVWEQafg2N1Zo6"
+    },
+    "81": {
+      "netuid": 81,
+      "subnet_name": "deprecated",
+      "owner_coldkey": "5DUELqJMeY6tA7652ooUUvU9TgUCi5hnv9o66nC8Zjw7BtW5",
+      "owner_hotkey": "5F9uEDDovurwEJihzZSpKypipVy84EEAPHTt3EfepTjcQfij"
+    },
+    "82": {
+      "netuid": 82,
+      "subnet_name": "Compelle",
+      "owner_coldkey": "5H6h1PUDfTFdTV5kRCgywGR7xjLo63LHMiP6wJ4qBU8A9zPs",
+      "owner_hotkey": "5GNyvcCzzSHLDkmMSTsJEz7NtrMvQEC5Wqo2dZqEEHyhZHgW"
+    },
+    "83": {
+      "netuid": 83,
+      "subnet_name": "CliqueAI",
+      "owner_coldkey": "5DqEjRLyNN8k3WbEXhA36tyGG4YpWyPEcVSTa47XxspNHhc3",
+      "owner_hotkey": "5EHGayLmiXfwz6oYmQFYmDz12RPXkhJw8Ty8RYVDeVZH9Q5L"
+    },
+    "84": {
+      "netuid": 84,
+      "subnet_name": "ansuz",
+      "owner_coldkey": "5G1hDNpPA8pRZUMJRBcELthCaHVPQcHZb1X3jbeyQ9zUtbbd",
+      "owner_hotkey": "5EjbqZDoEAMzk3AzCExmBT6toYC2iEKyyymQojsm8NkLpVAF"
+    },
+    "85": {
+      "netuid": 85,
+      "subnet_name": "Vidaio",
+      "owner_coldkey": "5GTPBjA4uXhuQ51SJB7Jd55JwY6dKEnbnjCrsSSEXy3MN63z",
+      "owner_hotkey": "5FR392L6eKrTGwUjQurpxw89YUe7LzKANktDwRKLYYSgwxhb"
+    },
+    "86": {
+      "netuid": 86,
+      "subnet_name": "kaunan",
+      "owner_coldkey": "5F4XAWGzcwpHjGdLUDfWiCvKnqeNPQHn3SwooBQcYcP7mWXJ",
+      "owner_hotkey": "5F1N5GEHkrXLtmVPjqaCm9FL7ruajFPGcr97BeYFgdN3D2cc"
+    },
+    "87": {
+      "netuid": 87,
+      "subnet_name": "Provenonce",
+      "owner_coldkey": "5HartH15eyQoKJk98jTMwhY9nW4JRfWEznqLRD1oQJuwdBHV",
+      "owner_hotkey": "5Do9743TzawQr4TKapjkxEnvNeaZC6Ldk1GephdJai7cQsN5"
+    },
+    "88": {
+      "netuid": 88,
+      "subnet_name": "Investing",
+      "owner_coldkey": "5FhMsGJS7WYdwBzcgsTWxEtY7UCYLZdmBVLcNPmCxr3ppiKS",
+      "owner_hotkey": "5HK4vbGgLQdFKarN3hLVqNRbgQtQR5w3WTZ2tTnFHHLPgXpY"
+    },
+    "89": {
+      "netuid": 89,
+      "subnet_name": "InfiniteQuant",
+      "owner_coldkey": "5Dc5NmEUptDeMLrxDSvg8kfCToxJkiF47apAYSVTycAVvDN4",
+      "owner_hotkey": "5FCN4P1KqFtsgBk29ABeDZuAnhrcHP2iTN2fG1kBefJBhBLd"
+    },
+    "90": {
+      "netuid": 90,
+      "subnet_name": "KubeTEE AI Factory",
+      "owner_coldkey": "5C9y6fnLPSzBeh1Np7f4DnGen42xV29nL9qZTDuwpVC4iTEE",
+      "owner_hotkey": "5EKtGWqskt8qBqdAZ78pSWRCYRuYmDc5XbwJPDqH1EpiSTEE"
+    },
+    "91": {
+      "netuid": 91,
+      "subnet_name": "cascade",
+      "owner_coldkey": "5HEe7NjS4exuP9SptWZdwWqWrMrGTTEHf5ieQH8yZXA3zXtW",
+      "owner_hotkey": "5FcCsoB2R5M55RdrNrvPQv7xmLJRFzs7R7C73UUSxgUCyfsw"
+    },
+    "92": {
+      "netuid": 92,
+      "subnet_name": "wgmi",
+      "owner_coldkey": "5E9LPDS2E5RFzoqRsF2D7NgJTFH3N2DVqeAodTksPJP7CT4x",
+      "owner_hotkey": "5FeHbWK12HHMLY4AtnWkKk8jtQajhQZMLCenGd96Hhs4UJGc"
+    },
+    "93": {
+      "netuid": 93,
+      "subnet_name": "Bitcast",
+      "owner_coldkey": "5EbY1SebUuz189w1G96JN4mmHnShAECA6JefCRYhSLqyYg2c",
+      "owner_hotkey": "5DAoDtMxVqtMu2Nd5E7QhPEGXDMgrySvE1b3rRT5ARDhfNNK"
+    },
+    "94": {
+      "netuid": 94,
+      "subnet_name": "pending...",
+      "owner_coldkey": "5CnwnkkCxrrNDuhy8Vvptd6j6ebrv9Z6mrTzD479f7uAiYat",
+      "owner_hotkey": "5EeKtCKEbtcnAzquuHr3WXRwCjNZe6jTa8DJAwx23ANg6Dvj"
+    },
+    "95": {
+      "netuid": 95,
+      "subnet_name": "Actual",
+      "owner_coldkey": "5D5UhUuc6cC47CXUBHyBkpDBrdeyeL6bpWGAreZgNm5WTyrg",
+      "owner_hotkey": "5ExqqyEBXLpGwqy6sSVrauozhcyAKBaMz1y5x9wAYSk7n7HP"
+    },
+    "96": {
+      "netuid": 96,
+      "subnet_name": "Verathos",
+      "owner_coldkey": "5CGq1JQhmZmR8w3pXFqycUgX9mcLt8bPwMZ8YDJbEmELpw7X",
+      "owner_hotkey": "5GpKXttD7h1spLMvFADW6pnpftakhiWy8iUAipq1najWMz8c"
+    },
+    "97": {
+      "netuid": 97,
+      "subnet_name": "Albedo",
+      "owner_coldkey": "5EUXD91ADceyH7nRWXCqG1wbaCEhsqosT4rjGhwaZDRR4ib6",
+      "owner_hotkey": "5EvHrbHz8rT8DrWazxFhzfMsmscFtPE3qhRDeY4ggKZrBcxZ"
+    },
+    "98": {
+      "netuid": 98,
+      "subnet_name": "NeverPlayAlone",
+      "owner_coldkey": "5EWzZCNsJe72k44Jd9oPUXRRkxVgFAtjyohgSwmTu6F8MBHM",
+      "owner_hotkey": "5HWVxikTvhkzXFwcZuvpswJUiUGDUn9146zDoECr2ZBtFxvK"
+    },
+    "99": {
+      "netuid": 99,
+      "subnet_name": "Thirty Spokes",
+      "owner_coldkey": "5DebFXsw76JvoG5j6qQRoyNK79qBEvd6A2trULrA6DGgQLYX",
+      "owner_hotkey": "5FWbrcGFEgaf9ukAH2qzyyzNX9PJtshdp1wEiPmiHGMwSeGD"
+    },
+    "100": {
+      "netuid": 100,
+      "subnet_name": "BASE",
+      "owner_coldkey": "5FX6kmhYwTYRFaZjxEo7k9DaG8qRmqrJtLTMGRgnfjRcXiWU",
+      "owner_hotkey": "5GziQCcRpN8NCJktX343brnfuVe3w6gUYieeStXPD1Dag2At"
+    },
+    "101": {
+      "netuid": 101,
+      "subnet_name": "Tag101",
+      "owner_coldkey": "5H8dNvi1jZRe1dcYN2FdknWKxfGx6u1o9pYm5zRMCZyy2Ex3",
+      "owner_hotkey": "5H6Dezn7frLQbNFk2pEKFtzE2YjRJu7KfdsitF3waiUAS2Zj"
+    },
+    "102": {
+      "netuid": 102,
+      "subnet_name": "ConnitoAI",
+      "owner_coldkey": "5HBc11rCaAj2UtUTeC3oK8zHbU7jQCQZWpRQvsawqxH8qkTm",
+      "owner_hotkey": "5EEinUEy3cfBCUyhbvCcYfWU713QCsDoVXqbbRLKFtEqKkC9"
+    },
+    "103": {
+      "netuid": 103,
+      "subnet_name": "Djinn",
+      "owner_coldkey": "5E6wTZZipkTmm6mci5jZp1FwXoUSGgG8CemFeC3DsV2nUGiM",
+      "owner_hotkey": "5FqBe8tHboYWtNxJaBjz95a94GfHPcPkR9kStsMirSJwanaN"
+    },
+    "104": {
+      "netuid": 104,
+      "subnet_name": "Masx.ai",
+      "owner_coldkey": "5HBb3F1bmDzdwQ5WTweXUvnKETTzu6aWNAH811vrLkvSdQAn",
+      "owner_hotkey": "5DtBXSbZH3GV4Mv6JiT5JGasQDMh66hdm3VHy4PNq1rQWVtP"
+    },
+    "105": {
+      "netuid": 105,
+      "subnet_name": "Beam",
+      "owner_coldkey": "5G3ic2pAzVu1gZmeUQfKGox3P8TetJw87asvyAdkb2o8aCCX",
+      "owner_hotkey": "5HBSExJPHsaHV3TuohhRi4oajphhVXFyanhWN96Ed3DHHTY4"
+    },
+    "106": {
+      "netuid": 106,
+      "subnet_name": "Nodexo",
+      "owner_coldkey": "5CTdHCps1vJ9LrZ3SPM8ZweXWtgg6vgEqEb5W8xzuZHQHXpA",
+      "owner_hotkey": "5D7FVSM1fJM56zHJuMBuQ5LH32mkLni52JonoeppFrezvyHy"
+    },
+    "107": {
+      "netuid": 107,
+      "subnet_name": "Minos",
+      "owner_coldkey": "5DA2vLrSXZxnT9G4Yrywx1Fpi4RXwMH1Ah7r8DTTWS7UZZBM",
+      "owner_hotkey": "5E4WJ2tAZVDTRVvSFtR1jJqAX4CokgCt9JYmPzJMWDmUT3Ju"
+    },
+    "108": {
+      "netuid": 108,
+      "subnet_name": "TalkHead",
+      "owner_coldkey": "5HDuqw9fkqG3xdm1yZA8dfKeLBnZhg138xiMwnYQdBeLfytT",
+      "owner_hotkey": "5EHmE35kPeBBJXWv6BUJumrn5QGpGEM1xXcEY4QGn4QtWf2q"
+    },
+    "109": {
+      "netuid": 109,
+      "subnet_name": "GuardArena",
+      "owner_coldkey": "5GULfmPmMWHwxxi53Mm1bnajGh3MLY9mWGx4NQ3sCjFXix2A",
+      "owner_hotkey": "5DyQkk4x6CwDtjtxe1NG2aMgQVXe9ZpZdT14SdYYwEVd3XUk"
+    },
+    "110": {
+      "netuid": 110,
+      "subnet_name": "Green Compute",
+      "owner_coldkey": "5D53sX6AwAzXUB24G85Ch35hYr5rCpXjYFWpFTe4uzBb75sL",
+      "owner_hotkey": "5CwckYmAV3fET8V9KTKfqds6BnRGACAgofECQqdYfa2Q9rvp"
+    },
+    "111": {
+      "netuid": 111,
+      "subnet_name": "Claims",
+      "owner_coldkey": "5Do2YQao1a5tPmcNyehkFq28y5G5uEX8fXjcrnCYbNc5mXJM",
+      "owner_hotkey": "5ExhNF86wqqBkyWwKRozATP8nRBUfyhVHKa7dquFchNRmaN5"
+    },
+    "112": {
+      "netuid": 112,
+      "subnet_name": "minotaur",
+      "owner_coldkey": "5D7Rf7HbeE7ti49fyLg3TM3F96uWFUwzYBo9SkzBpAUTQMhM",
+      "owner_hotkey": "5E1ohAszHfhyQUEtz6mvCCkW4pYHsinPjxXS938fAZ2jFvCt"
+    },
+    "113": {
+      "netuid": 113,
+      "subnet_name": "TensorUSD",
+      "owner_coldkey": "5GndoVhMAr8mF5zv1gPVLQYbXzmXe3Xh3kF37nt8qy5CaXTP",
+      "owner_hotkey": "5FRumLA6zhL7G72xfojizAeZaTGhAYqw3WQYrq1iusC3M8uB"
+    },
+    "114": {
+      "netuid": 114,
+      "subnet_name": "SOMA",
+      "owner_coldkey": "5FHrQMjzzAhmL5zS9ys87ZrGCwG3vsVT9hXAUWZQ8SNdRqig",
+      "owner_hotkey": "5H1nRfbCbDGh3t17er9Y8hwFEsXCrjBbaN6jLrnez8KpUKju"
+    },
+    "115": {
+      "netuid": 115,
+      "subnet_name": "HashiChain",
+      "owner_coldkey": "5EkNnrTjnMYaj4x1gNxAnJne9UvKgfU6NZNjhm6XFWMstbdG",
+      "owner_hotkey": "5EhTo9AXu6JCK2voyEz2ftwFq9cmYR1ACj8qobD67MGZKgTV"
+    },
+    "116": {
+      "netuid": 116,
+      "subnet_name": "Memo",
+      "owner_coldkey": "5F48aA3Pw1vFRfnhhfu7EJKqzrj8y9VBWtS4PE9xJ1chHXqB",
+      "owner_hotkey": "5CXN6pP6ing9qguYEqtPLB5pphxAKpYabVe7uvLSysENsub5"
+    },
+    "117": {
+      "netuid": 117,
+      "subnet_name": "glyph",
+      "owner_coldkey": "5HdThE9WvusfeFpk7R3Lnc9wfP4zsDje3GeRew6mrQHNNFiY",
+      "owner_hotkey": "5DwRMxJG2KxxMXF9qqfc1NowJWKnY46QJHNf5R4CG9RozmGE"
+    },
+    "118": {
+      "netuid": 118,
+      "subnet_name": "Ditto",
+      "owner_coldkey": "5DUJfND9r2BjiJHNKSxJxzT7ptrxiseFe1GxeMwcTov52Y55",
+      "owner_hotkey": "5HmP9732JFjnut2RY9yg4Gz2qJ38vF8xFwZb5dQVPF7FsmZz"
+    },
+    "119": {
+      "netuid": 119,
+      "subnet_name": "Satori",
+      "owner_coldkey": "5GbLENPLG8Takn1puaz5HorPmrFtDT7i2PojiJsqutbaGwWu",
+      "owner_hotkey": "5HMwvi1dHWCBHTNTtizL5peRBwqvd8HtGrTVouN51p75JNd4"
+    },
+    "120": {
+      "netuid": 120,
+      "subnet_name": "Affine",
+      "owner_coldkey": "5Fc3ZZQAYB3SPXKcFnd1WJeyQvArSZZeB6LU1rb7zvQ6XvDh",
+      "owner_hotkey": "5E4J1cWWhQZjEduKqC6RHEd5UuDnkef7ZkvXuxcUxkdxkbPb"
+    },
+    "121": {
+      "netuid": 121,
+      "subnet_name": "sundae_bar",
+      "owner_coldkey": "5CXGaDJsffVeBK4CDhBNMVK6MH7fHbL7AbnjzZ8XP6QzFLWm",
+      "owner_hotkey": "5EL9y2gdesAcPiPmoyFKABToiui3RkXewiKxdTMmes34ZdNf"
+    },
+    "122": {
+      "netuid": 122,
+      "subnet_name": "CookingTAO",
+      "owner_coldkey": "5F3uH1G4QNyT8UR6D2Zf2zmXa6WAxYC3MfaiSGgg5pScWfY9",
+      "owner_hotkey": "5CfPqfaz6L11nu7yX7LKXFwg3KZkuKCiyvYFDW9N34dnJyYB"
+    },
+    "123": {
+      "netuid": 123,
+      "subnet_name": "MANTIS",
+      "owner_coldkey": "5HVuEdEGMYisecwjkWC7dKDPEzgs9cECdsdCQagfPRVf6FxZ",
+      "owner_hotkey": "5GxsywPcZyWVYYJ7iuJpfmtujaA695M4FMCiqNRRcqNba82o"
+    },
+    "124": {
+      "netuid": 124,
+      "subnet_name": "Swarm",
+      "owner_coldkey": "5HKYqfJrUFKYPMRFZZ7kfhUNEyHUbY2ZyEjQqKJf2RKVpeXM",
+      "owner_hotkey": "5GZPtUjyp5d4j7aWWV9774caQAxxbsxNNM3nuaJYDPAEDjmt"
+    },
+    "125": {
+      "netuid": 125,
+      "subnet_name": "8 Ball",
+      "owner_coldkey": "5DTzv2rL6YGQjCDNiWQJz2nE23fK1mDccH9eQimgiieyL3C4",
+      "owner_hotkey": "5CFFokuo3Xkt2cgH3cnS3Nzm36zS4Lqg9KjTR99DdUKuydnx"
+    },
+    "126": {
+      "netuid": 126,
+      "subnet_name": "Poker44",
+      "owner_coldkey": "5DqrUa2z6E9taJdY8FGiPCrtCswsEjHjPbVo5xcTw2GqvKZm",
+      "owner_hotkey": "5DqrUa2z6E9taJdY8FGiPCrtCswsEjHjPbVo5xcTw2GqvKZm"
+    },
+    "127": {
+      "netuid": 127,
+      "subnet_name": "Astrid",
+      "owner_coldkey": "5FU4uxAdrZsaWaezWwXEK93MwPX5gw2566BQK2WwrGUudfSH",
+      "owner_hotkey": "5EKrpcqVNWfVfmKiq8v3LRrgb3E3ENBwYzmAziDhMK58gtb5"
+    },
+    "128": {
+      "netuid": 128,
+      "subnet_name": "ByteLeap",
+      "owner_coldkey": "5GgMeLFN4YssT6f9i9pZpRmczt8GYDsCZ1nYPiGRcTPWn3AA",
+      "owner_hotkey": "5FpsgU3JFa8S2GnngH92J9vtHHi4PYgZzxGXnwdFNwEwt9h8"
+    }
+  }
+}
