@@ -60,7 +60,54 @@ export function StakeSubmitPanel({
   const [mevDiagnostics, setMevDiagnostics] = useState(null);
   const [mevClientError, setMevClientError] = useState("");
   const [lastSubmitLatencyMs, setLastSubmitLatencyMs] = useState(null);
+  // Shown in MEV diagnostics (easier to spot than status-line labels).
+  const [lastLatencyBreakdown, setLastLatencyBreakdown] = useState(null);
   const netuidInputRef = useRef(null);
+
+  const asLatencyMs = (v) => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  };
+
+  const applySubmitLatency = (result) => {
+    const poolMs = asLatencyMs(result?.pool_submit_latency_ms);
+    const composeMs = asLatencyMs(result?.compose_ms);
+    const prepMs = asLatencyMs(result?.prep_ms);
+    const lockMs = asLatencyMs(result?.lock_sign_ms);
+    const signMs = asLatencyMs(result?.sign_ms);
+    const innerSignMs = asLatencyMs(result?.inner_sign_ms);
+    const outerSignMs = asLatencyMs(result?.outer_sign_ms);
+    const encMs = asLatencyMs(result?.encrypt_ms);
+    const rpcMs = asLatencyMs(result?.submit_rpc_ms);
+    const materialsMs = asLatencyMs(result?.materials_ms);
+    const waitMs = asLatencyMs(result?.soft_window_wait_ms);
+    const totalMs = asLatencyMs(result?.submit_latency_ms);
+    const displayMs = poolMs != null ? poolMs : totalMs;
+    if (displayMs != null) setLastSubmitLatencyMs(displayMs);
+    const parts = [];
+    if (poolMs != null) parts.push(`pool ${poolMs}ms`);
+    // Sub-phases that make up pool (exclude soft-window wait).
+    // compose_ms and prep_ms are the same one-shot factory timing — show once.
+    if (composeMs != null) parts.push(`compose ${composeMs}ms`);
+    else if (prepMs != null) parts.push(`prep ${prepMs}ms`);
+    if (lockMs != null && lockMs >= 1) parts.push(`lock ${lockMs}ms`);
+    if (signMs != null) parts.push(`sign ${signMs}ms`);
+    if (innerSignMs != null) parts.push(`in ${innerSignMs}ms`);
+    const outerComposeMs = asLatencyMs(result?.outer_compose_ms);
+    if (outerComposeMs != null) parts.push(`ocomp ${outerComposeMs}ms`);
+    if (outerSignMs != null) parts.push(`out ${outerSignMs}ms`);
+    if (encMs != null) parts.push(`enc ${encMs}ms`);
+    if (rpcMs != null) parts.push(`rpc ${rpcMs}ms`);
+    if (materialsMs != null) parts.push(`mat ${materialsMs}ms`);
+    if (waitMs != null && waitMs >= 50) parts.push(`wait ${waitMs}ms`);
+    if (totalMs != null) parts.push(`confirm ${totalMs}ms`);
+    setLastLatencyBreakdown(parts.length ? parts.join(" · ") : null);
+    return parts.length ? parts.join(" · ") : null;
+  };
 
   const disabled = !apiBase || !backendOk;
   const nonceBusy = disabled || refreshingNonce;
@@ -152,12 +199,9 @@ export function StakeSubmitPanel({
         setMevClientError("");
       }
       const hash = result?.tx_hash ? String(result.tx_hash).slice(0, 18) + "..." : "-";
-      const latencyMs =
-        typeof result?.submit_latency_ms === "number" ? result.submit_latency_ms : null;
-      if (latencyMs != null) {
-        setLastSubmitLatencyMs(latencyMs);
-      }
-      const latency = latencyMs != null ? `${latencyMs}ms` : null;
+      // Prefer pool latency (click → mempool). Total confirm also includes
+      // waiting for the next block (~0–12s) and looks "slow".
+      const latency = applySubmitLatency(result);
       const mode = result?.submit_mode ? String(result.submit_mode) : null;
       setStatus(`${label} submitted · ${hash}${latency ? ` · ${latency}` : ""}${mode ? ` · ${mode}` : ""}`);
       if (onRefreshPortfolio) {
@@ -489,15 +533,12 @@ export function StakeSubmitPanel({
         throw new Error(result?.error || "batch submission failed");
       }
       const hash = result?.tx_hash ? `${String(result.tx_hash).slice(0, 18)}...` : "-";
-      const latencyMs =
-        typeof result?.submit_latency_ms === "number" ? result.submit_latency_ms : null;
-      if (latencyMs != null) {
-        setLastSubmitLatencyMs(latencyMs);
-      }
-      const latency = latencyMs != null ? ` · ${latencyMs}ms` : "";
-      const mode = result?.submit_mode ? ` · ${result.submit_mode}` : "";
+      const latency = applySubmitLatency(result);
+      const mode = result?.submit_mode ? String(result.submit_mode) : null;
       setStatus(
-        `force_batch submitted · ${hash} · ${result.op_count ?? ops.length} ops${latency}${mode}`
+        `force_batch submitted · ${hash} · ${result.op_count ?? ops.length} ops${
+          latency ? ` · ${latency}` : ""
+        }${mode ? ` · ${mode}` : ""}`
       );
       if (mevProtection) {
         setMevClientError("");
@@ -534,8 +575,11 @@ export function StakeSubmitPanel({
             <div>portfolio block: {portfolio.updated_at_block}</div>
           ) : null}
         </div>
-        <div className="stake-submit-latency" title="Last successful submit latency">
-          <div className="stake-submit-latency-label">submit latency</div>
+        <div
+          className="stake-submit-latency"
+          title="Time from click to mempool accept (pool). Confirm wait is separate."
+        >
+          <div className="stake-submit-latency-label">pool latency</div>
           <div className="stake-submit-latency-value">
             {lastSubmitLatencyMs != null ? `${lastSubmitLatencyMs}ms` : "—"}
           </div>
@@ -870,6 +914,15 @@ export function StakeSubmitPanel({
       {mevProtection ? (
         <div className="mev-diagnostics">
           <div className="mev-diagnostics-title mono">MEV protection — bugs & live status</div>
+          {lastLatencyBreakdown ? (
+            <div className="mev-diagnostics-meta mono" title="Last MEV submit timing breakdown">
+              last submit · {lastLatencyBreakdown}
+            </div>
+          ) : (
+            <div className="mev-diagnostics-meta mono">
+              last submit · (after next MEV submit: pool / mat / wait / confirm)
+            </div>
+          )}
           {mevClientError ? (
             <div className="mev-diagnostics-item mev-level-error mono">{mevClientError}</div>
           ) : null}
@@ -900,15 +953,6 @@ export function StakeSubmitPanel({
                 .join(" · ")}
             </div>
           ) : null}
-          <div className="mev-known-title mono">Known MEV stake/unstake issues</div>
-          <ul className="mev-known-list mono">
-            {(mevDiagnostics?.known_issues || []).map((item) => (
-              <li key={item.code}>
-                <span className="mev-known-label">{item.title}</span>
-                <span className="mev-known-detail">{item.detail}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       ) : null}
     </section>

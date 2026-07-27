@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import atexit
 import contextlib
+import gc
 import json
 import os
 import re
@@ -17,7 +18,8 @@ import secrets
 import threading
 import time
 from collections import deque
-from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import blake2b
@@ -865,12 +867,64 @@ class PortfolioQueryService:
         return result
 
 
+def _rpc_work_limit_retry_sec(exc) -> float | None:
+    """Parse Substrate -32004 / pending_pool work-limit retry delay (seconds).
+
+    Returns None when the error is not an upstream work-limit.
+    """
+    data = None
+    with contextlib.suppress(Exception):
+        maybe = getattr(exc, "data", None)
+        if isinstance(maybe, dict):
+            data = maybe
+    if data is None:
+        with contextlib.suppress(Exception):
+            args0 = exc.args[0] if getattr(exc, "args", None) else None
+            if isinstance(args0, dict) and (
+                args0.get("code") == -32004
+                or "work limit" in str(args0.get("message") or "").lower()
+            ):
+                data = args0
+    if isinstance(data, dict):
+        inner = data.get("data") if isinstance(data.get("data"), dict) else {}
+        code = data.get("code")
+        msg = str(data.get("message") or "").lower()
+        budget = str(inner.get("budget") or "")
+        if (
+            code == -32004
+            or "work limit" in msg
+            or budget == "pending_pool"
+            or str(inner.get("policy") or "") == "upstream_work"
+        ):
+            retry_ms = inner.get("retry_after_ms")
+            if retry_ms is not None:
+                with contextlib.suppress(Exception):
+                    return max(0.05, float(retry_ms) / 1000.0)
+            return 0.35
+
+    text = str(exc or "")
+    low = text.lower()
+    if not (
+        "-32004" in text
+        or "work limit" in low
+        or "pending_pool" in low
+        or "upstream_work" in low
+    ):
+        return None
+    m = re.search(r"retry_after_ms['\"]?\s*[:=]\s*(\d+)", text, flags=re.I)
+    if m:
+        with contextlib.suppress(Exception):
+            return max(0.05, float(m.group(1)) / 1000.0)
+    return 0.35
+
+
 async def _publish_mempool_error(
     state: SnapshotState,
     poll_index: int,
     error: str,
     address_book_seq_getter=None,
 ):
+    """Publish a hard mempool failure (clears rows). Never used for -32004."""
     await state.publish_mempool(
         {
             "ts": utc_now_iso(),
@@ -907,6 +961,27 @@ def _row_from_new_extrinsic(row: dict, new_hashes: set[str]) -> bool:
     return SnapshotState._normalize_mempool_hash((row or {}).get("hash")) in new_hashes
 
 
+def _mev_scale_quiet_active() -> bool:
+    """True while MEV compose/sign holds the SCALE hot-path quiet flag."""
+    svc = globals().get("STAKE_SERVICE")
+    return bool(svc is not None and getattr(svc, "mev_scale_quiet", lambda: False)())
+
+
+def _decode_pending_batch(substrate, missing):
+    """Decode helper compatible with older mempool_realtime (no should_abort)."""
+    if _mev_scale_quiet_active():
+        return {}
+    try:
+        return decode_extrinsics_batch(
+            substrate, missing, should_abort=_mev_scale_quiet_active
+        )
+    except TypeError as exc:
+        # Deploy mismatch: server updated, mempool_realtime.py not yet.
+        if "should_abort" not in str(exc):
+            raise
+        return decode_extrinsics_batch(substrate, missing)
+
+
 async def mempool_collector(
     config: RuntimeConfig,
     state: SnapshotState,
@@ -922,6 +997,8 @@ async def mempool_collector(
     poll_index = 0
     rpc_timeout_sec = float(os.getenv("MEMPOOL_RPC_TIMEOUT_SEC") or "15")
     decode_timeout_sec = float(os.getenv("MEMPOOL_DECODE_TIMEOUT_SEC") or "5")
+    # Raises the floor after -32004 so we stop emptying the dashboard + starving MEV.
+    adaptive_interval = 0.0
 
     while True:
         substrate = None
@@ -931,7 +1008,12 @@ async def mempool_collector(
             # and clearing forces a full re-decode burst that stalls detection.
 
             while True:
+                # Yield the GIL to MEV compose/sign — keep last snapshot + local pins.
+                if _mev_scale_quiet_active():
+                    await asyncio.sleep(0.02)
+                    continue
                 started = time.perf_counter()
+                work_limit_sleep = None
                 try:
                     response = await asyncio.wait_for(
                         asyncio.to_thread(
@@ -959,13 +1041,16 @@ async def mempool_collector(
 
                     missing = [ext_hex for ext_hex in pending if ext_hex not in decode_cache]
                     if missing:
+                        if _mev_scale_quiet_active():
+                            await asyncio.sleep(0.02)
+                            continue
                         batch_timeout = min(
                             60.0,
                             decode_timeout_sec * max(1, len(missing)),
                         )
                         batch = await asyncio.wait_for(
                             asyncio.to_thread(
-                                decode_extrinsics_batch, substrate, missing
+                                _decode_pending_batch, substrate, missing
                             ),
                             timeout=batch_timeout,
                         )
@@ -1043,30 +1128,58 @@ async def mempool_collector(
                     )
                     last_pending_set = current_pending_set
                     poll_index += 1
+                    # Successful poll — slowly relax adaptive backoff.
+                    if adaptive_interval > 0:
+                        adaptive_interval = max(0.0, adaptive_interval * 0.5 - 0.05)
                 except asyncio.TimeoutError:
                     raise RuntimeError("mempool poll timed out") from None
                 except Exception as exc:
-                    await _publish_mempool_error(
-                        state,
-                        poll_index,
-                        str(exc),
-                        address_book_seq_getter=address_book_seq_getter,
-                    )
-                    await asyncio.sleep(1.0)
+                    retry_sec = _rpc_work_limit_retry_sec(exc)
+                    if retry_sec is not None:
+                        # -32004 pending_pool: keep last snapshot, do NOT push
+                        # error into WS payload (frontend would show Backend error
+                        # and empty mempool). Just back off and retry.
+                        adaptive_interval = min(
+                            8.0,
+                            max(
+                                float(adaptive_interval) * 1.5,
+                                float(retry_sec) + 0.75,
+                                1.25,
+                            ),
+                        )
+                        work_limit_sleep = max(float(retry_sec) + 0.25, adaptive_interval)
+                    else:
+                        await _publish_mempool_error(
+                            state,
+                            poll_index,
+                            str(exc),
+                            address_book_seq_getter=address_book_seq_getter,
+                        )
+                        work_limit_sleep = 1.0
+
+                if work_limit_sleep is not None:
+                    await asyncio.sleep(work_limit_sleep)
+                    continue
 
                 elapsed = time.perf_counter() - started
-                sleep_s = max(0.0, config.mempool_poll_interval - elapsed)
+                interval = max(
+                    float(config.mempool_poll_interval), float(adaptive_interval)
+                )
+                sleep_s = max(0.0, interval - elapsed)
                 await asyncio.sleep(sleep_s)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await _publish_mempool_error(
-                state,
-                poll_index,
-                str(exc),
-                address_book_seq_getter=address_book_seq_getter,
-            )
-            await asyncio.sleep(2.0)
+            retry_sec = _rpc_work_limit_retry_sec(exc)
+            if retry_sec is None:
+                await _publish_mempool_error(
+                    state,
+                    poll_index,
+                    str(exc),
+                    address_book_seq_getter=address_book_seq_getter,
+                )
+            # Work-limit on reconnect path: silent sleep, keep last rows.
+            await asyncio.sleep(max(2.0, float(retry_sec or 0.0) + 0.5))
         finally:
             with contextlib.suppress(Exception):
                 if substrate is not None:
@@ -1174,6 +1287,10 @@ async def block_collector(
                     if bn == last_block:
                         continue
 
+                    if _mev_scale_quiet_active():
+                        # Defer heavy block SCALE parse until MEV sign finishes.
+                        await asyncio.sleep(0.02)
+                        continue
                     alpha_prices, _ = alpha_price_cache.snapshot()
                     report = await asyncio.to_thread(parse_block, sub_parser, int(bn), alpha_prices)
                     rows = list(report.get("stake_rows", []))
@@ -1476,6 +1593,8 @@ class StakeSubmitService:
         # recomposing on the hot path; each submit still re-signs with a fresh nonce.
         self._remove_full_call_cache = {}
         self._remove_full_prewarm_done = set()
+        # Must exist before _new_substrate (fast-path caches block hashes here).
+        self._mev_block_hash_by_number = {}
         self._sub = self._new_substrate(timeout=self._rpc_timeout_sec)
         # Dedicated read connection for alpha-price + compose so the (cheap, ~2ms)
         # read phase of a submit no longer needs self._lock. This lets one thread
@@ -1606,9 +1725,21 @@ class StakeSubmitService:
         self._latest_block_number = None
         # Monotonic timestamp when each block number was first observed locally.
         self._block_first_seen_mono = {}
+        # Heads returned from soft-window "wait next block" — age≈0 must stick so
+        # chain-TS corrector cannot push them past cutoff again (false re-wait).
+        self._mev_waited_block_starts = set()
         # Recent observed block-to-block intervals (seconds) for MEV sign-window policy.
         # Populated from local first-seen timestamps; adapts when blocks run long.
         self._mev_block_duration_samples = deque(maxlen=16)
+        # Single-flight era/NextKey fetch per head — warm thread + click join one
+        # watch RPC burst instead of stacking two ~2–4s cold paths.
+        self._mev_materials_flight_lock = threading.Lock()
+        self._mev_materials_flight = {}
+        # When >0, mempool/block SCALE decode must yield — those workers share the
+        # GIL with compose_call/create_signed_extrinsic and were slicing the MEV
+        # hot path into ~380ms quanta (compose/in/ocomp/out all ≈ same).
+        self._mev_scale_quiet_depth = 0
+        self._mev_scale_quiet_lock = threading.Lock()
         self._block_stop = threading.Event()
         self._portfolio_stop = threading.Event()
         self._nonce_stop = threading.Event()
@@ -1654,6 +1785,8 @@ class StakeSubmitService:
         )
         with contextlib.suppress(Exception):
             self._publish_head_from_sub(self._block_sub)
+        with contextlib.suppress(Exception):
+            self._warm_mev_genesis_hash()
         self._block_thread.start()
         self._block_head_poll_thread.start()
         self._portfolio_thread.start()
@@ -1662,6 +1795,111 @@ class StakeSubmitService:
     @staticmethod
     def _read_env(key):
         return os.getenv(key)
+
+    def mev_scale_quiet(self) -> bool:
+        return self._mev_scale_quiet_depth > 0
+
+    @contextmanager
+    def _mev_scale_hot_path(self):
+        """Pause competing SCALE decode and keep GIL for MEV compose/sign."""
+        with self._mev_scale_quiet_lock:
+            self._mev_scale_quiet_depth += 1
+        # Let in-flight mempool decode iterations see the flag and abort.
+        time.sleep(0.005)
+        gc_was_enabled = gc.isenabled()
+        if gc_was_enabled:
+            gc.disable()
+        try:
+            yield
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+            with self._mev_scale_quiet_lock:
+                self._mev_scale_quiet_depth = max(0, self._mev_scale_quiet_depth - 1)
+
+    def _remember_mev_block_hash(self, block_number, block_hash):
+        if block_number is None or not block_hash:
+            return
+        self._mev_block_hash_by_number[int(block_number)] = str(block_hash)
+
+    def _warm_mev_genesis_hash(self):
+        """Cache genesis hash once — create_signed always asks for block 0."""
+        if 0 in self._mev_block_hash_by_number:
+            return self._mev_block_hash_by_number[0]
+        h = None
+        with contextlib.suppress(Exception):
+            h = self._with_watch_retry(
+                lambda s: s.get_block_hash(0),
+                attempts=2,
+                label="mev_genesis_hash_watch",
+            )
+        if not h:
+            with contextlib.suppress(Exception):
+                with self._lock:
+                    h = self._sub.get_block_hash(0)
+        if h:
+            self._remember_mev_block_hash(0, h)
+        return h
+
+    def _warm_mev_era_mortality_hashes(self, sub, era, *, finalised_hash=None):
+        """Resolve era birth (+ genesis) hashes on watch/read — not submit lock.
+
+        Caller already holds the appropriate sub lock (watch/read/submit).
+        """
+        era = dict(era or {})
+        if not era:
+            return era
+        if 0 not in self._mev_block_hash_by_number:
+            with contextlib.suppress(Exception):
+                self._remember_mev_block_hash(0, sub.get_block_hash(0))
+        try:
+            era_obj = sub.runtime_config.create_scale_object("Era")
+            era_obj.encode(era)
+            birth = int(era_obj.birth(era.get("current")))
+        except Exception:
+            return era
+        birth_hash = None
+        if finalised_hash and int(era.get("current")) == int(birth):
+            birth_hash = finalised_hash
+        if not birth_hash:
+            with contextlib.suppress(Exception):
+                birth_hash = sub.get_block_hash(birth)
+        if birth_hash:
+            self._remember_mev_block_hash(birth, birth_hash)
+        return era
+
+    @contextlib.contextmanager
+    def _mev_cached_block_hash_scope(self, sub):
+        """Serve get_block_hash from local cache during create_signed_extrinsic."""
+        cache = self._mev_block_hash_by_number
+        orig = sub.get_block_hash
+
+        def _cached(block_id=None, **kwargs):
+            if block_id is None:
+                block_id = kwargs.get("block_id")
+            if block_id is not None:
+                try:
+                    key = int(block_id)
+                except Exception:
+                    key = None
+                if key is not None:
+                    hit = cache.get(key)
+                    if hit:
+                        return hit
+            if kwargs:
+                h = orig(block_id=block_id, **{k: v for k, v in kwargs.items() if k != "block_id"})
+            else:
+                h = orig(block_id)
+            if block_id is not None and h:
+                with contextlib.suppress(Exception):
+                    cache[int(block_id)] = str(h)
+            return h
+
+        sub.get_block_hash = _cached
+        try:
+            yield
+        finally:
+            sub.get_block_hash = orig
 
     def _wallet_path(self, wallet_name, *parts):
         return os.path.join(self.wallets_dir, wallet_name, *parts)
@@ -1726,7 +1964,77 @@ class StakeSubmitService:
             ws_options=ws_options,
         )
         sub.init_runtime()
+        self._install_substrate_fast_path(sub)
         return sub
+
+    def _install_substrate_fast_path(self, sub):
+        """Speed MEV compose/sign: skip redundant init_runtime + cache block hashes.
+
+        py-substrate-interface calls init_runtime() at the start of every
+        compose_call/create_signed_extrinsic. On some builds that re-touches
+        runtime/metadata and dominates the ~380ms/op we measured. Also install
+        a permanent get_block_hash cache (create_signed always asks genesis +
+        era birth).
+        """
+        if sub is None or getattr(sub, "_ayu_fast_path", False):
+            return
+        orig_init = sub.init_runtime
+
+        def _init_runtime(block_hash=None, block_id=None):
+            if (
+                block_hash is None
+                and block_id is None
+                and getattr(sub, "metadata", None) is not None
+                and getattr(sub, "runtime_version", None) is not None
+            ):
+                return None
+            return orig_init(block_hash=block_hash, block_id=block_id)
+
+        sub.init_runtime = _init_runtime
+
+        orig_gbh = sub.get_block_hash
+        cache = self._mev_block_hash_by_number
+
+        def _cached_gbh(block_id=None, **kwargs):
+            if block_id is None:
+                block_id = kwargs.get("block_id")
+            if block_id is not None:
+                with contextlib.suppress(Exception):
+                    key = int(block_id)
+                    hit = cache.get(key)
+                    if hit:
+                        return hit
+            if kwargs:
+                h = orig_gbh(
+                    block_id=block_id,
+                    **{k: v for k, v in kwargs.items() if k != "block_id"},
+                )
+            else:
+                h = orig_gbh(block_id)
+            if block_id is not None and h:
+                with contextlib.suppress(Exception):
+                    cache[int(block_id)] = str(h)
+            return h
+
+        sub.get_block_hash = _cached_gbh
+        sub._ayu_fast_path = True
+
+    def _compose_call_local(self, call_module, call_function, call_params):
+        """Compose without substrate.compose_call wrapper overhead when warm."""
+        sub = self._sub
+        if getattr(sub, "metadata", None) is None:
+            sub.init_runtime()
+        call = sub.runtime_config.create_scale_object(
+            type_string="Call", metadata=sub.metadata
+        )
+        call.encode(
+            {
+                "call_module": call_module,
+                "call_function": call_function,
+                "call_args": dict(call_params or {}),
+            }
+        )
+        return call
 
     def close(self):
         self._block_stop.set()
@@ -1837,6 +2145,19 @@ class StakeSubmitService:
                 self._compose_remove_full_call(0, warm_remove_hk, use_proxy=False)
                 if self.proxy_ss58:
                     self._compose_remove_full_call(0, warm_remove_hk, use_proxy=True)
+            # 5) MEV hot-path SCALE: force_batch nest + MevShield.submit_encrypted
+            with contextlib.suppress(Exception):
+                with self._lock:
+                    self._compose_mev_wrapped_stake_call(
+                        "add_stake_limit", dummy_add, use_proxy=False
+                    )
+                    self._compose_call_local(
+                        "MevShield",
+                        "submit_encrypted",
+                        {"ciphertext": b"\x00" * 64},
+                    )
+            with contextlib.suppress(Exception):
+                self._warm_mev_genesis_hash()
             self._prewarm_ok = True
             self._prewarm_error = ""
         except Exception as exc:
@@ -2581,13 +2902,9 @@ class StakeSubmitService:
         # wrong encrypt key → mempool pending with no confirm.
         if newly:
             bn_i = int(block_number)
-            threading.Thread(
-                target=self._correct_block_first_seen,
-                args=(bn_i,),
-                daemon=True,
-                name=f"mev-age-{bn_i}",
-            ).start()
             # Keep era/NextKey hot so MEV sign does not pay 2–4 RPCs on click.
+            # Do NOT rewrite first_seen from chain TS here — that permanently
+            # aged blocks past cutoff and forced ~4s next-block waits on every click.
             threading.Thread(
                 target=self._warm_mev_sign_materials_for_head,
                 args=(bn_i,),
@@ -2595,60 +2912,31 @@ class StakeSubmitService:
                 name=f"mev-warm-{bn_i}",
             ).start()
 
-    def _correct_block_first_seen(self, block_number):
-        """Late-observe fix only — soft-window clock must match UI receive age.
-
-        UI topbar age = time since block WS arrived. Soft-window must use the
-        same subscribe/receive clock. Aligning every block to chain timestamp
-        made UI ~5s look like server ~9s+ → false wait for next block.
-
-        Only rewrite first_seen when chain already says past the ≤9s cutoff
-        while local still looks early (true late-observe → wrong-key risk).
-        """
+    def _mark_mev_block_start_now(self, block_number):
+        """Treat head as soft-window block-start (age=0) after an intentional wait."""
         bn = int(block_number)
-        local_age = self._current_block_age_sec(bn)
-        ts_ms = self._block_timestamp_ms_at(bn)
-        if ts_ms is None:
-            return
-        chain_age = max(0.0, (time.time() * 1000.0 - float(ts_ms)) / 1000.0)
-        immediate = self._mev_block_immediate_sec()
-        # Chain still inside soft-window — keep subscribe clock (matches UI).
-        if chain_age < immediate:
-            return
-        local = float(local_age) if local_age is not None else 0.0
-        # Local already past cutoff or nearly matches chain — nothing to do.
-        if local + 1.0 >= chain_age or local > immediate:
-            return
-        corrected = time.monotonic() - chain_age
         with self._block_cond:
-            prev = self._block_first_seen_mono.get(bn)
-            if prev is None or corrected < float(prev):
-                self._block_first_seen_mono[bn] = corrected
+            self._block_first_seen_mono[bn] = time.monotonic()
+            self._mev_waited_block_starts.add(bn)
+            if len(self._mev_waited_block_starts) > 32:
+                floor = bn - 32
+                self._mev_waited_block_starts = {
+                    x for x in self._mev_waited_block_starts if x >= floor
+                }
 
     def _touch_mev_block_seen(self, block_number, *, mark_now_if_unknown=False):
-        """Record when we first observed a block for MEV sign-window age.
+        """Record receive-clock age for soft-window. Never poison with chain TS.
 
-        Hot path must stay cheap: if first_seen is already known, return.
-        Unknown head: seed with chain age ONLY when already past soft-window
-        (avoid age=0 on a 10s-old tip). Otherwise mark now — same clock as UI.
+        Hot path must stay cheap (no chain_getBlock). Unknown head + mark_now
+        stamps subscriber receive time (matches UI). RPC tips with
+        mark_now_if_unknown=False stay unknown until late-observe check at sign.
         """
         bn = int(block_number)
         with self._block_cond:
-            if bn in self._block_first_seen_mono:
+            if bn in self._block_first_seen_mono or bn in self._mev_waited_block_starts:
                 return
-        ts_ms = self._block_timestamp_ms_at(bn)
-        if ts_ms is not None:
-            age_sec = max(0.0, (time.time() * 1000.0 - float(ts_ms)) / 1000.0)
-            if age_sec > self._mev_block_immediate_sec():
-                seen_mono = time.monotonic() - age_sec
-                with self._block_cond:
-                    if bn not in self._block_first_seen_mono:
-                        self._block_first_seen_mono[bn] = seen_mono
-                return
-        if mark_now_if_unknown:
-            with self._block_cond:
-                if bn not in self._block_first_seen_mono:
-                    self._block_first_seen_mono[bn] = time.monotonic()
+            if mark_now_if_unknown:
+                self._block_first_seen_mono[bn] = time.monotonic()
 
     def _current_block_age_sec(self, block_number):
         bn = int(block_number)
@@ -2659,10 +2947,10 @@ class StakeSubmitService:
         return None
 
     def _block_timestamp_ms_at(self, block_number):
-        """Read block timestamp for soft-window age.
+        """Read block timestamp for late-observe guard only (not the soft-window clock).
 
-        MUST use the read socket — never self._sub. Cached briefly so touch+age
-        in the same submit do not pay two full chain_getBlock round-trips.
+        MUST use the read socket — never self._sub. Cached briefly so repeated
+        checks in one submit do not pay two full chain_getBlock round-trips.
         """
         bn = int(block_number)
         now = time.monotonic()
@@ -2700,42 +2988,10 @@ class StakeSubmitService:
         return ts_ms
 
     def _mev_block_age_sec(self, block_number, *, allow_rpc=True):
-        """Block age for soft-window — UI subscriber clock.
-
-        Requirement: ≤9s sign now; >9s wait next block start.
-        Trust local age when ≥1.5s (keeps ~7s clicks on the early path).
-        Chain TS only for late-observe (local unknown or still <1.5s AND
-        chain says past cutoff). Never max(local, chain) on early ages —
-        that made 7s clicks wait for the next block.
-        """
+        """Soft-window age = subscriber receive clock only (never rewritten)."""
+        del allow_rpc  # chain TS must not become the soft-window clock
         local_age = self._current_block_age_sec(block_number)
-        if not allow_rpc:
-            return float(local_age) if local_age is not None else None
-        if local_age is not None and float(local_age) >= 1.5:
-            return float(local_age)
-        ts_ms = self._block_timestamp_ms_at(block_number)
-        if ts_ms is None:
-            return float(local_age) if local_age is not None else None
-        chain_age = max(0.0, (time.time() * 1000.0 - float(ts_ms)) / 1000.0)
-        immediate = self._mev_block_immediate_sec()
-        # Late-observe only: local still young but chain says past cutoff.
-        if chain_age > immediate:
-            bn = int(block_number)
-            corrected = time.monotonic() - chain_age
-            with self._block_cond:
-                prev = self._block_first_seen_mono.get(bn)
-                if prev is None or corrected < float(prev):
-                    self._block_first_seen_mono[bn] = corrected
-            return float(chain_age)
-        # Both early — prefer local UI clock; seed from chain only if unknown.
-        if local_age is not None:
-            return float(local_age)
-        bn = int(block_number)
-        corrected = time.monotonic() - chain_age
-        with self._block_cond:
-            if bn not in self._block_first_seen_mono:
-                self._block_first_seen_mono[bn] = corrected
-        return float(chain_age)
+        return float(local_age) if local_age is not None else None
 
     def begin_mev_op(self):
         """Start a new MEV HTTP-bound operation.
@@ -2750,6 +3006,12 @@ class StakeSubmitService:
             gen = self._mev_op_active_generation
         # Clear a prior timeout signal so a fresh request can run.
         self._mev_cancel.clear()
+        # Warm tip materials on watch while soft-window/sign setup runs — cold
+        # FinalizedHead+NextKey on click was ~2–4s of pool latency.
+        with self._block_cond:
+            tip = self._latest_block_number
+        if tip is not None:
+            self._kick_warm_mev_materials_for_head(int(tip))
         return gen
 
     def cancel_mev_ops(self):
@@ -2846,26 +3108,48 @@ class StakeSubmitService:
         }
 
     def _mev_sign_head_is_fresh(self, head_block, *, allow_rpc=True):
-        """True when age ≤ soft-window cutoff (default 9s) — sign now."""
+        """True when receive-age ≤ cutoff — sign now.
+
+        Receive clock matches UI. Chain TS is a one-shot late-observe guard only
+        when receive-age is still <1.5s (never rewrites first_seen — that caused
+        permanent past-cutoff ages and ~4s waits on every click).
+        """
         immediate_sec = self._mev_block_immediate_sec()
-        age = self._mev_block_age_sec(head_block, allow_rpc=allow_rpc)
-        if age is None:
+        receive = self._current_block_age_sec(head_block)
+        if receive is not None and float(receive) > immediate_sec:
+            return False, float(receive)
+        if receive is not None and float(receive) <= immediate_sec:
+            if float(receive) >= 1.5 or not allow_rpc:
+                return True, float(receive)
+            # Brand-new receive clock — confirm chain is not already past cutoff.
+            ts_ms = self._block_timestamp_ms_at(head_block)
+            if ts_ms is None:
+                return True, float(receive)
+            chain_age = max(0.0, (time.time() * 1000.0 - float(ts_ms)) / 1000.0)
+            if chain_age > immediate_sec:
+                return False, float(chain_age)
+            return True, float(receive)
+        # Receive unknown — not fresh unless we can prove chain is still early.
+        if not allow_rpc:
             return False, None
-        return age <= immediate_sec, age
+        ts_ms = self._block_timestamp_ms_at(head_block)
+        if ts_ms is None:
+            return False, None
+        chain_age = max(0.0, (time.time() * 1000.0 - float(ts_ms)) / 1000.0)
+        if chain_age <= immediate_sec:
+            return True, float(chain_age)
+        return False, float(chain_age)
 
     def _acquire_mev_sign_head(self, *, sub=None, cancel_generation=None):
         """
         User soft-window (once, immediately before sign):
 
-        - age ≤ 9s (or unknown) → return head now → confirm in that slot
-        - age > 9s → wait until next head arrives, then return it
-          (next block first start → confirm there; avoids cutoff pending)
+        - age ≤ cutoff → return head now → confirm in that slot
+        - age > cutoff → wait until next head arrives, then return it
+        - age unknown: never treat as fresh (wrong-key risk)
 
         Never raise soft-window timeout. Never max(local,chain) on early ages.
-
-        Speed: when the block-subscriber already has a known age ≤ cutoff, return
-        that head without a watch/timestamp RPC. Live tip is still re-checked
-        under submit _lock before encrypt (wrong-key guard unchanged).
+        While waiting, warm NextKey/era for the target head on watch (overlap).
         """
         use_watch = sub is not None
         immediate = self._mev_block_immediate_sec()
@@ -2881,8 +3165,8 @@ class StakeSubmitService:
                 )
             else:
                 head = int(self._get_mev_head_block())
-            # Known → no-op. Unknown → chain-correct once (late-observe only).
-            self._touch_mev_block_seen(head, mark_now_if_unknown=True)
+            # Do not invent age=0 on an RPC tip — that signs past-cutoff blocks.
+            self._touch_mev_block_seen(head, mark_now_if_unknown=False)
             return int(head)
 
         if cancel_generation is not None:
@@ -2893,11 +3177,16 @@ class StakeSubmitService:
             local_head = self._latest_block_number
         if local_head is not None:
             local_age = self._current_block_age_sec(local_head)
+            if local_age is None:
+                # Tip known to subscriber but unclocked — stamp receive-now.
+                self._touch_mev_block_seen(int(local_head), mark_now_if_unknown=True)
+                local_age = self._current_block_age_sec(local_head)
             if local_age is not None and float(local_age) <= immediate:
                 return int(local_head), False
             if local_age is not None and float(local_age) > immediate:
-                # Late on local clock — wait for next head (subscriber wake).
+                # Late on local clock — wait for next head; warm materials meanwhile.
                 target = int(local_head) + 1
+                self._kick_warm_mev_materials_for_head(target)
                 estimated = self._estimated_mev_block_duration_sec()
                 slice_sec = max(float(estimated) * 2.0, 20.0)
                 while True:
@@ -2913,18 +3202,40 @@ class StakeSubmitService:
                     with self._block_cond:
                         local_now = self._latest_block_number
                     if local_now is not None and int(local_now) >= target:
+                        self._mark_mev_block_start_now(int(local_now))
                         return int(local_now), True
                     head = _head()
                     if int(head) >= target:
+                        self._mark_mev_block_start_now(int(head))
                         return int(head), True
 
         head = _head()
         fresh, age = self._mev_sign_head_is_fresh(head, allow_rpc=True)
-        if fresh or age is None:
+        if fresh:
             return int(head), False
 
-        # Late: wait for the next sealed head, then sign at that block's start.
+        if age is None:
+            # Unknown age — do not sign-now (wrong key). Prefer subscriber clock.
+            local_age = self._current_block_age_sec(head)
+            if local_age is not None and float(local_age) <= immediate:
+                return int(head), False
+            if local_age is not None and float(local_age) > immediate:
+                pass  # fall through to wait
+            else:
+                with self._block_cond:
+                    latest = self._latest_block_number
+                if latest is None or int(head) >= int(latest):
+                    # Tip we just observed; align with subscriber receive clock.
+                    self._touch_mev_block_seen(head, mark_now_if_unknown=True)
+                    return int(head), False
+                sub_age = self._current_block_age_sec(int(latest))
+                if sub_age is None or float(sub_age) <= immediate:
+                    return int(latest), False
+                head = int(latest)
+
+        # Past soft-window → wait for the next sealed head; warm while waiting.
         target = int(head) + 1
+        self._kick_warm_mev_materials_for_head(target)
         estimated = self._estimated_mev_block_duration_sec()
         slice_sec = max(float(estimated) * 2.0, 20.0)
         while True:
@@ -2937,8 +3248,14 @@ class StakeSubmitService:
             )
             if cancel_generation is not None:
                 self._raise_if_mev_cancelled(cancel_generation)
+            with self._block_cond:
+                local_now = self._latest_block_number
+            if local_now is not None and int(local_now) >= target:
+                self._mark_mev_block_start_now(int(local_now))
+                return int(local_now), True
             head = _head()
             if int(head) >= target:
+                self._mark_mev_block_start_now(int(head))
                 return int(head), True
 
     def _wait_for_new_block(self, prev_seq, stop_event, timeout_s):
@@ -3124,7 +3441,11 @@ class StakeSubmitService:
             finalised_hash = sub.rpc_request("chain_getFinalizedHead", [])["result"]
             header = sub.rpc_request("chain_getHeader", [finalised_hash])["result"]
             finalised_block = parse_block_number(header.get("number"))
-            return {"period": MEV_SHIELD_ERA_PERIOD, "current": finalised_block}
+            era = {"period": MEV_SHIELD_ERA_PERIOD, "current": finalised_block}
+            self._warm_mev_era_mortality_hashes(
+                sub, era, finalised_hash=finalised_hash
+            )
+            return era
 
         if via == "watch":
             era = self._with_watch_retry(
@@ -3223,8 +3544,8 @@ class StakeSubmitService:
         """Background warm on watch socket as soon as a head is seen.
 
         At head H we need NextKey(H-1) for inclusion H+1. Also warm NextKey(H)
-        so a click on the *next* block start is already hot (fixes ~2s pool delay
-        at mempool/block open when read-socket prefetch used to miss + stall).
+        so a click on the *next* block start is already hot.
+        Always watch — never lagged read endpoint (wrong-key risk).
         """
         head = int(head_block)
         with contextlib.suppress(Exception):
@@ -3233,76 +3554,151 @@ class StakeSubmitService:
             # Next head H+1 will need NextKey(H).
             self._mev_shield_encrypt_key_for_inclusion(head + 2, via="watch")
 
+    def _kick_warm_mev_materials_for_head(self, head_block):
+        """Daemon warm if cache cold. Used during soft-window next-block waits."""
+        try:
+            bn = int(head_block)
+        except Exception:
+            return
+        era, key = self._mev_materials_cached_for_head(bn)
+        if era is not None and key is not None:
+            return
+        threading.Thread(
+            target=self._warm_mev_sign_materials_for_head,
+            args=(bn,),
+            daemon=True,
+            name=f"mev-warm-{bn}",
+        ).start()
+
+    def _store_mev_era_cache(self, era):
+        self._mev_era_cache = (time.monotonic(), dict(era))
+
+    def _store_mev_next_key_cache(self, key_block, public_key):
+        cache = getattr(self, "_mev_next_key_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._mev_next_key_cache = cache
+        cache[int(key_block)] = (time.monotonic(), public_key)
+        if len(cache) > 24:
+            for old_k in sorted(cache.keys())[:-16]:
+                cache.pop(old_k, None)
+
+    def _fetch_mev_era_watch(self):
+        def _fetch(sub):
+            finalised_hash = sub.rpc_request("chain_getFinalizedHead", [])["result"]
+            header = sub.rpc_request("chain_getHeader", [finalised_hash])["result"]
+            finalised_block = parse_block_number(header.get("number"))
+            era = {
+                "period": MEV_SHIELD_ERA_PERIOD,
+                "current": finalised_block,
+            }
+            self._warm_mev_era_mortality_hashes(
+                sub, era, finalised_hash=finalised_hash
+            )
+            return era
+
+        return self._with_watch_retry(_fetch, attempts=2, label="mev_era_watch")
+
+    def _fetch_mev_next_key_watch(self, key_block):
+        def _fetch(sub):
+            block_hash = sub.get_block_hash(int(key_block))
+            raw = sub.query("MevShield", "NextKey", [], block_hash=block_hash)
+            return _coerce_mev_shield_public_key(raw)
+
+        return self._with_watch_retry(
+            _fetch, attempts=2, label="mev_next_key_watch"
+        )
+
     def _ensure_mev_sign_materials(self, head_block):
         """Guarantee era + NextKey for head are cached; fetch on watch if needed.
 
         Never called under submit _lock. Returns (era, public_key).
+        Single-flight per head: background warm and click share one fetch.
+        Era and NextKey are separate short watch sections so a half-filled
+        cache can short-circuit the second RPC.
         """
-        era, key = self._mev_materials_cached_for_head(head_block)
+        head = int(head_block)
+        era, key = self._mev_materials_cached_for_head(head)
         if era is not None and key is not None:
             return era, key
-        inclusion = int(head_block) + 1
-        key_block = max(inclusion - 2, 0)
-        now = time.monotonic()
-        era_cached = getattr(self, "_mev_era_cache", None)
-        era_fresh = (
-            era_cached is not None
-            and now - float(era_cached[0]) < self._mev_era_cache_ttl_sec()
-        )
-        key_cache = getattr(self, "_mev_next_key_cache", None)
-        key_fresh = (
-            isinstance(key_cache, dict)
-            and key_cache.get(key_block) is not None
-            and now - float(key_cache[key_block][0]) < 45.0
-        )
 
-        def _fetch(sub):
-            era_v = None
-            if not era_fresh:
-                finalised_hash = sub.rpc_request("chain_getFinalizedHead", [])[
-                    "result"
-                ]
-                header = sub.rpc_request("chain_getHeader", [finalised_hash])[
-                    "result"
-                ]
-                finalised_block = parse_block_number(header.get("number"))
-                era_v = {
-                    "period": MEV_SHIELD_ERA_PERIOD,
-                    "current": finalised_block,
+        with self._mev_materials_flight_lock:
+            flight = self._mev_materials_flight.get(head)
+            if flight is None:
+                flight = {
+                    "event": threading.Event(),
+                    "result": None,
+                    "error": None,
                 }
-            key_v = None
-            if not key_fresh:
-                block_hash = sub.get_block_hash(key_block)
-                raw = sub.query("MevShield", "NextKey", [], block_hash=block_hash)
-                key_v = _coerce_mev_shield_public_key(raw)
-            return era_v, key_v
+                self._mev_materials_flight[head] = flight
+                leader = True
+            else:
+                leader = False
 
-        era_new, key_new = self._with_watch_retry(
-            _fetch, attempts=2, label="mev_ensure_materials"
-        )
-        now = time.monotonic()
-        if era_new is not None:
-            self._mev_era_cache = (now, era_new)
-            era = era_new
-        else:
-            era = dict(era_cached[1])
-        if key_new is not None:
-            if not isinstance(key_cache, dict):
-                key_cache = {}
-                self._mev_next_key_cache = key_cache
-            key_cache[key_block] = (now, key_new)
-            if len(key_cache) > 24:
-                for old_k in sorted(key_cache.keys())[:-16]:
-                    key_cache.pop(old_k, None)
-            key = key_new
-        else:
-            key = key_cache[key_block][1]
-        return dict(era), key
+        if not leader:
+            flight["event"].wait(timeout=20.0)
+            if flight.get("error") is not None:
+                raise flight["error"]
+            if flight.get("result") is not None:
+                return flight["result"]
+            era, key = self._mev_materials_cached_for_head(head)
+            if era is not None and key is not None:
+                return era, key
+            raise RuntimeError(f"MEV materials flight failed for head #{head}")
+
+        try:
+            inclusion = head + 1
+            key_block = max(inclusion - 2, 0)
+            now = time.monotonic()
+            era_cached = getattr(self, "_mev_era_cache", None)
+            era_fresh = (
+                era_cached is not None
+                and now - float(era_cached[0]) < self._mev_era_cache_ttl_sec()
+            )
+            key_cache = getattr(self, "_mev_next_key_cache", None)
+            key_fresh = (
+                isinstance(key_cache, dict)
+                and key_cache.get(key_block) is not None
+                and now - float(key_cache[key_block][0]) < 45.0
+            )
+
+            if not era_fresh:
+                era_new = self._fetch_mev_era_watch()
+                self._store_mev_era_cache(era_new)
+                era = dict(era_new)
+            else:
+                era = dict(era_cached[1])
+
+            # Recheck key after era RPC — warm may have filled it meanwhile.
+            era_hit, key_hit = self._mev_materials_cached_for_head(head)
+            if key_hit is not None:
+                key = key_hit
+                if era_hit is not None:
+                    era = era_hit
+            elif not key_fresh:
+                key_new = self._fetch_mev_next_key_watch(key_block)
+                self._store_mev_next_key_cache(key_block, key_new)
+                key = key_new
+            else:
+                key = key_cache[key_block][1]
+
+            result = (dict(era), key)
+            flight["result"] = result
+            return result
+        except Exception as exc:
+            flight["error"] = exc
+            raise
+        finally:
+            flight["event"].set()
+            with self._mev_materials_flight_lock:
+                if self._mev_materials_flight.get(head) is flight:
+                    self._mev_materials_flight.pop(head, None)
 
     def _prefetch_mev_sign_materials(self, head_block, signer_addr=None):
         """Ensure era/NextKey + nonce before submit lock. No thread-pool overhead.
 
         Returns (outer_nonce_or_None, era, public_key).
+        Prefer nonce cache — avoid a watch RTT when the watcher is warm.
         """
         era, public_key = self._ensure_mev_sign_materials(head_block)
         outer_nonce = None
@@ -3387,21 +3783,52 @@ class StakeSubmitService:
 
     def _compose_force_batch_on_submit(self, inner_calls, use_proxy):
         """Local metadata compose on submit _sub. Caller holds self._lock."""
-        batch = self._sub.compose_call(
-            call_module="Utility",
-            call_function="force_batch",
-            call_params={"calls": list(inner_calls)},
+        batch = self._compose_call_local(
+            "Utility",
+            "force_batch",
+            {"calls": list(inner_calls)},
         )
         if not use_proxy:
             return batch
-        return self._sub.compose_call(
-            call_module="Proxy",
-            call_function="proxy",
-            call_params={
+        return self._compose_call_local(
+            "Proxy",
+            "proxy",
+            {
                 "real": self.real_ss58,
                 "force_proxy_type": self.force_proxy_type,
                 "call": batch,
             },
+        )
+
+    def _compose_mev_wrapped_stake_call(self, action, params, use_proxy):
+        """One SCALE tree: force_batch([stake]) (+ optional Proxy).
+
+        Nested dict form avoids compose(stake) + compose(batch) double pass
+        (~300ms+300ms on this host). Caller holds self._lock.
+        """
+        stake_node = {
+            "call_module": "SubtensorModule",
+            "call_function": str(action),
+            "call_args": dict(params),
+        }
+        if use_proxy:
+            return self._compose_call_local(
+                "Proxy",
+                "proxy",
+                {
+                    "real": self.real_ss58,
+                    "force_proxy_type": self.force_proxy_type,
+                    "call": {
+                        "call_module": "Utility",
+                        "call_function": "force_batch",
+                        "call_args": {"calls": [stake_node]},
+                    },
+                },
+            )
+        return self._compose_call_local(
+            "Utility",
+            "force_batch",
+            {"calls": [stake_node]},
         )
 
     def _prepare_mev_inner_call(self, call, use_proxy, head_block=None):
@@ -3560,26 +3987,41 @@ class StakeSubmitService:
             public_key = self._mev_shield_encrypt_key_for_inclusion(
                 inclusion_block, via="submit"
             )
-        inner_xt = self._sub.create_signed_extrinsic(
-            call=mev_inner_call,
-            keypair=signer_kp,
-            nonce=inner_nonce,
-            era=era,
-        )
-        inner_hash = self._extrinsic_hash_hex(inner_xt)
-        ciphertext = self._mev_shielded_ciphertext(inner_xt, public_key)
-        outer_call = self._sub.compose_call(
-            call_module="MevShield",
-            call_function="submit_encrypted",
-            call_params={"ciphertext": ciphertext},
-        )
-        outer_xt = self._sub.create_signed_extrinsic(
-            call=outer_call,
-            keypair=signer_kp,
-            nonce=outer_nonce,
-            era=era,
-            tip=mev_tip,
-        )
+        # Mortality hashes must already be warmed on watch (era fetch). Do not
+        # RPC get_block_hash on the submit socket here — that was ~1.4s of pool.
+        inner_sign_ms = None
+        outer_sign_ms = None
+        with self._mev_cached_block_hash_scope(self._sub):
+            t_inner = time.perf_counter()
+            inner_xt = self._sub.create_signed_extrinsic(
+                call=mev_inner_call,
+                keypair=signer_kp,
+                nonce=inner_nonce,
+                era=era,
+            )
+            inner_sign_ms = round((time.perf_counter() - t_inner) * 1000.0, 2)
+            inner_hash = self._extrinsic_hash_hex(inner_xt)
+            t_enc = time.perf_counter()
+            ciphertext = self._mev_shielded_ciphertext(inner_xt, public_key)
+            encrypt_ms = round((time.perf_counter() - t_enc) * 1000.0, 2)
+            t_outer_compose = time.perf_counter()
+            outer_call = self._compose_call_local(
+                "MevShield",
+                "submit_encrypted",
+                {"ciphertext": ciphertext},
+            )
+            outer_compose_ms = round(
+                (time.perf_counter() - t_outer_compose) * 1000.0, 2
+            )
+            t_outer = time.perf_counter()
+            outer_xt = self._sub.create_signed_extrinsic(
+                call=outer_call,
+                keypair=signer_kp,
+                nonce=outer_nonce,
+                era=era,
+                tip=mev_tip,
+            )
+            outer_sign_ms = round((time.perf_counter() - t_outer) * 1000.0, 2)
         return {
             "head_block": head_block,
             "inclusion_block": inclusion_block,
@@ -3587,17 +4029,25 @@ class StakeSubmitService:
             "inner_hash": inner_hash,
             "public_key": public_key,
             "outer_xt": outer_xt,
+            "encrypt_ms": encrypt_ms,
+            "inner_sign_ms": inner_sign_ms,
+            "outer_sign_ms": outer_sign_ms,
+            "outer_compose_ms": outer_compose_ms,
         }
 
     def _submit_with_mev_retry(
         self,
         signer_kp,
         signer_addr,
-        call,
+        call=None,
         use_proxy=False,
         netuid=None,
         mev_confirm_event=None,
         mempool_hint=None,
+        *,
+        clock_start=None,
+        compose_ms=None,
+        mev_call_factory=None,
     ):
         """
         User requirements:
@@ -3610,8 +4060,17 @@ class StakeSubmitService:
           - Pin real wrapper hash to mempool UI immediately on submit_extrinsic
             accept (not after confirm, not after poll)
         """
-        started = time.perf_counter()
+        # Prefer caller clock (includes pre-MEV compose/price) so pool matches
+        # click→accept, not just the inner retry loop.
+        started = float(clock_start) if clock_start is not None else time.perf_counter()
+        pre_compose_ms = (
+            round(float(compose_ms), 2) if compose_ms is not None else None
+        )
+        if call is None and mev_call_factory is None:
+            raise RuntimeError("MEV submit requires call or mev_call_factory")
         if mev_confirm_event is None:
+            if call is None:
+                raise RuntimeError("MEV submit requires mev_confirm_event with factory")
             mev_confirm_event = self._mev_inner_confirm_event_from_call(call)
         mev_tip = int(
             (self._read_env("STAKE_MEV_TIP_RAO") or "0").strip() or "0"
@@ -3729,7 +4188,17 @@ class StakeSubmitService:
                 "inclusion_block": incl,
                 "mev_confirmed": True,
                 "materials_ms": phases.get("materials_ms"),
+                "soft_window_wait_ms": phases.get("soft_window_wait_ms"),
                 "pool_submit_latency_ms": pool_submit_latency_ms,
+                "prep_ms": phases.get("prep_ms"),
+                "compose_ms": phases.get("compose_ms"),
+                "lock_sign_ms": phases.get("lock_sign_ms"),
+                "sign_ms": phases.get("sign_ms"),
+                "inner_sign_ms": phases.get("inner_sign_ms"),
+                "outer_sign_ms": phases.get("outer_sign_ms"),
+                "outer_compose_ms": phases.get("outer_compose_ms"),
+                "encrypt_ms": phases.get("encrypt_ms"),
+                "submit_rpc_ms": phases.get("submit_rpc_ms"),
                 "submit_latency_ms": round(
                     (time.perf_counter() - started) * 1000.0, 2
                 ),
@@ -3757,9 +4226,11 @@ class StakeSubmitService:
             return None
 
         try:
+            # Soft-window / materials first (watch RPC, little SCALE), then a
+            # quiet SCALE section: compose+sign without mempool/block decode
+            # stealing the GIL (~380ms quanta per op when contended).
             mev_inner_prepared = None
-            with self._lock:
-                self._assert_no_mev_inflight(signer_addr)
+            prep_ms = None
 
             for submit_round in range(1, max_submit_rounds + 1):
                 self._raise_if_mev_cancelled(op_generation)
@@ -3787,16 +4258,37 @@ class StakeSubmitService:
                 prefetched_key = None
                 materials_ms = None
                 past_window_retry = False
+                soft_window_wait_ms = None
+                sign_ms = None
+                encrypt_ms = None
+                submit_rpc_ms = None
+                lock_sign_ms = None
+                outer_compose_ms = None
+                pinned_early = False
 
                 # Soft-window once per economic round. Tip-move key miss
                 # re-prefetches in-place (no resign wait, no burned round).
                 for _tip_try in range(3):
+                    pin_after_accept = False
                     try:
                         t_prep = time.perf_counter()
+                        # Start materials warm for the live tip before soft-window
+                        # so sign-now clicks join an in-flight ensure (not cold).
+                        with self._block_cond:
+                            tip_now = self._latest_block_number
+                        if tip_now is not None:
+                            self._kick_warm_mev_materials_for_head(int(tip_now))
                         if head_block is None:
-                            head_block, _waited = self._acquire_mev_sign_head(
+                            t_sw = time.perf_counter()
+                            head_block, waited = self._acquire_mev_sign_head(
                                 sub=True, cancel_generation=op_generation
                             )
+                            soft_window_wait_ms = round(
+                                (time.perf_counter() - t_sw) * 1000.0, 2
+                            )
+                            if waited:
+                                # Wait overlapped warm; don't count wait as materials.
+                                t_prep = time.perf_counter()
                         # Adopt subscriber tip before materials (outside lock).
                         with self._block_cond:
                             local_head = self._latest_block_number
@@ -3807,12 +4299,18 @@ class StakeSubmitService:
                             live_fresh, _live_age = self._mev_sign_head_is_fresh(
                                 int(local_head), allow_rpc=False
                             )
-                            if live_fresh or _live_age is None:
+                            # Never treat age=None as fresh (wrong-key risk).
+                            if live_fresh:
                                 head_block = int(local_head)
                             else:
                                 last_attempt_block = int(head_block)
                                 last_exc = RuntimeError(
                                     f"MEV tip moved to #{local_head} past sign window"
+                                    + (
+                                        " (age unknown)"
+                                        if _live_age is None
+                                        else ""
+                                    )
                                 )
                                 past_window_retry = True
                                 break
@@ -3844,140 +4342,249 @@ class StakeSubmitService:
 
                     skip_sign = False
                     need_key_prefetch = False
-                    with self._lock:
-                        with self._block_cond:
-                            local_head = self._latest_block_number
-                        if local_head is not None and int(local_head) > int(head_block):
-                            live_fresh, _live_age = self._mev_sign_head_is_fresh(
-                                int(local_head), allow_rpc=False
-                            )
-                            if not (live_fresh or _live_age is None):
-                                last_attempt_block = int(head_block)
-                                skip_sign = True
-                                past_window_retry = True
-                                last_exc = RuntimeError(
-                                    f"MEV tip moved to #{local_head} past sign window"
-                                )
-                            else:
-                                cached_era, cached_key = (
-                                    self._mev_materials_cached_for_head(
-                                        int(local_head)
-                                    )
-                                )
-                                if cached_key is not None:
-                                    head_block = int(local_head)
-                                    if cached_era is not None:
-                                        prefetched_era = cached_era
-                                    prefetched_key = cached_key
+                    # Quiet mempool/block SCALE decode for compose+sign (GIL).
+                    # Soft-window wait above stays outside so UI polls can resume.
+                    with self._mev_scale_hot_path():
+                        if mev_inner_prepared is None:
+                            t_compose = time.perf_counter()
+                            with self._lock:
+                                self._assert_no_mev_inflight(signer_addr)
+                                if mev_call_factory is not None:
+                                    mev_inner_prepared = mev_call_factory()
                                 else:
+                                    mev_inner_prepared = self._prepare_mev_inner_call(
+                                        call, use_proxy, head_block=None
+                                    )
+                            prep_ms = round(
+                                (time.perf_counter() - t_compose) * 1000.0, 2
+                            )
+                            # One-shot factory: compose_ms == prep_ms (not double work).
+                            if pre_compose_ms is None:
+                                pre_compose_ms = prep_ms
+                        t_lock_sign = time.perf_counter()
+                        with self._lock:
+                            lock_sign_ms = round(
+                                (time.perf_counter() - t_lock_sign) * 1000.0, 2
+                            )
+                            with self._block_cond:
+                                local_head = self._latest_block_number
+                            if local_head is not None and int(local_head) > int(head_block):
+                                live_fresh, _live_age = self._mev_sign_head_is_fresh(
+                                    int(local_head), allow_rpc=False
+                                )
+                                if not live_fresh:
+                                    last_attempt_block = int(head_block)
                                     skip_sign = True
-                                    need_key_prefetch = True
-                                    head_block = int(local_head)
+                                    past_window_retry = True
                                     last_exc = RuntimeError(
-                                        f"MEV tip moved to #{local_head}; "
-                                        "prefetch key"
-                                    )
-
-                        if not skip_sign:
-                            if mev_inner_prepared is None:
-                                # After soft-window + materials — never before.
-                                mev_inner_prepared = self._prepare_mev_inner_call(
-                                    call, use_proxy, head_block=None
-                                )
-                            if prefetched_outer_nonce is not None:
-                                outer_nonce = int(prefetched_outer_nonce)
-                            else:
-                                outer_nonce = int(
-                                    self._fetch_chain_nonce(signer_addr)
-                                )
-                            inner_nonce = outer_nonce + 1
-                            try:
-                                signed = self._sign_mev_shield_pair(
-                                    signer_kp,
-                                    signer_addr,
-                                    mev_inner_prepared,
-                                    mev_tip,
-                                    outer_nonce,
-                                    inner_nonce,
-                                    head_block=head_block,
-                                    era=prefetched_era,
-                                    public_key=prefetched_key,
-                                )
-                                inner_hash = signed["inner_hash"]
-                                submit_block = signed["head_block"]
-                                last_attempt_block = int(submit_block)
-                                receipt = self._sub.submit_extrinsic(
-                                    signed["outer_xt"], wait_for_inclusion=False
-                                )
-                                pool_submit_latency_ms = round(
-                                    (time.perf_counter() - started) * 1000.0, 2
-                                )
-                                self._last_mev_pool_phases = {
-                                    "materials_ms": materials_ms,
-                                    "pool_submit_latency_ms": pool_submit_latency_ms,
-                                }
-                                ext_hash = self._extrinsic_hash_hex(
-                                    receipt.extrinsic_hash
-                                )
-                                if not _adopt_pooled_wrapper(
-                                    ext_hash, outer_nonce, submit_block
-                                ):
-                                    # Accepted bytes belong to a hash we already
-                                    # declared missed — stop the cycle.
-                                    last_exc = RuntimeError(
-                                        f"MEV submit echoed missed wrapper "
-                                        f"{str(ext_hash)[:18]}…"
-                                    )
-                                    ban_abort = True
-                                    break
-                            except Exception as exc:
-                                err = str(exc).lower()
-                                last_attempt_block = int(head_block)
-                                if (
-                                    "already imported" in err
-                                    or _is_temporarily_banned_error(exc)
-                                ):
-                                    pending_hash = self._find_pending_wrapper_hash(
-                                        signer_addr, outer_nonce
-                                    )
-                                    if (
-                                        not pending_hash
-                                        and last_pool_hash
-                                        and last_pool_nonce is not None
-                                        and int(last_pool_nonce) == int(outer_nonce)
-                                        and _norm_extrinsic_hash(last_pool_hash)
-                                        not in missed_wrapper_hashes
-                                    ):
-                                        pending_hash = last_pool_hash
-                                    adopted = False
-                                    if pending_hash:
-                                        adopted = _adopt_pooled_wrapper(
-                                            pending_hash,
-                                            outer_nonce,
-                                            last_pool_submit_block
-                                            if last_pool_submit_block is not None
-                                            else head_block,
+                                        f"MEV tip moved to #{local_head} past sign window"
+                                        + (
+                                            " (age unknown)"
+                                            if _live_age is None
+                                            else ""
                                         )
-                                    if not adopted:
-                                        # 1012 / missed-hash — do NOT re-wait or
-                                        # resign into the same banned wrapper.
-                                        last_exc = exc
-                                        self._invalidate_mev_sign_caches()
+                                    )
+                                else:
+                                    cached_era, cached_key = (
+                                        self._mev_materials_cached_for_head(
+                                            int(local_head)
+                                        )
+                                    )
+                                    if cached_key is not None:
+                                        head_block = int(local_head)
+                                        if cached_era is not None:
+                                            prefetched_era = cached_era
+                                        prefetched_key = cached_key
+                                    else:
+                                        skip_sign = True
+                                        need_key_prefetch = True
+                                        head_block = int(local_head)
+                                        last_exc = RuntimeError(
+                                            f"MEV tip moved to #{local_head}; "
+                                            "prefetch key"
+                                        )
+
+                            if not skip_sign:
+                                if mev_inner_prepared is None:
+                                    if call is not None:
+                                        mev_inner_prepared = self._prepare_mev_inner_call(
+                                            call, use_proxy, head_block=None
+                                        )
+                                    else:
+                                        raise RuntimeError("MEV inner call not prepared")
+                                if prefetched_outer_nonce is not None:
+                                    outer_nonce = int(prefetched_outer_nonce)
+                                else:
+                                    outer_nonce = int(
+                                        self._fetch_chain_nonce(signer_addr)
+                                    )
+                                inner_nonce = outer_nonce + 1
+                                try:
+                                    t_sign = time.perf_counter()
+                                    signed = self._sign_mev_shield_pair(
+                                        signer_kp,
+                                        signer_addr,
+                                        mev_inner_prepared,
+                                        mev_tip,
+                                        outer_nonce,
+                                        inner_nonce,
+                                        head_block=head_block,
+                                        era=prefetched_era,
+                                        public_key=prefetched_key,
+                                    )
+                                    sign_ms = round(
+                                        (time.perf_counter() - t_sign) * 1000.0, 2
+                                    )
+                                    encrypt_ms = signed.get("encrypt_ms")
+                                    inner_sign_ms = signed.get("inner_sign_ms")
+                                    outer_sign_ms = signed.get("outer_sign_ms")
+                                    outer_compose_ms = signed.get("outer_compose_ms")
+                                    inner_hash = signed["inner_hash"]
+                                    submit_block = signed["head_block"]
+                                    last_attempt_block = int(submit_block)
+                                    # Hash from signed bytes — pin BEFORE submit RTT
+                                    # so mempool UI updates while author_submit runs.
+                                    signed_hash = self._extrinsic_hash_hex(
+                                        signed.get("outer_xt")
+                                    )
+                                    if signed_hash:
+                                        self._pin_mev_mempool(
+                                            signed_hash,
+                                            signer_addr,
+                                            use_proxy=bool(use_proxy),
+                                            hint=mempool_hint,
+                                        )
+                                        pinned_early = True
+                                    t_rpc = time.perf_counter()
+                                    try:
+                                        receipt = self._sub.submit_extrinsic(
+                                            signed["outer_xt"],
+                                            wait_for_inclusion=False,
+                                        )
+                                    except Exception:
+                                        if pinned_early and signed_hash:
+                                            self._drop_mev_mempool_pin(signed_hash)
+                                        raise
+                                    submit_rpc_ms = round(
+                                        (time.perf_counter() - t_rpc) * 1000.0, 2
+                                    )
+                                    # Click→accept excluding soft-window policy wait.
+                                    # Compose that overlapped wait is not in wall time.
+                                    total_ms = (time.perf_counter() - started) * 1000.0
+                                    wait_ms = float(soft_window_wait_ms or 0.0)
+                                    pool_submit_latency_ms = round(
+                                        max(0.0, total_ms - wait_ms), 2
+                                    )
+                                    # Avoid double-counting one-shot factory as compose+prep.
+                                    report_prep = prep_ms
+                                    if (
+                                        pre_compose_ms is not None
+                                        and prep_ms is not None
+                                        and abs(float(pre_compose_ms) - float(prep_ms))
+                                        < 0.05
+                                    ):
+                                        report_prep = None
+                                    self._last_mev_pool_phases = {
+                                        "materials_ms": materials_ms,
+                                        "soft_window_wait_ms": soft_window_wait_ms,
+                                        "pool_submit_latency_ms": pool_submit_latency_ms,
+                                        "compose_ms": pre_compose_ms,
+                                        "prep_ms": report_prep,
+                                        "lock_sign_ms": lock_sign_ms,
+                                        "sign_ms": sign_ms,
+                                        "inner_sign_ms": inner_sign_ms,
+                                        "outer_sign_ms": outer_sign_ms,
+                                        "outer_compose_ms": outer_compose_ms,
+                                        "encrypt_ms": encrypt_ms,
+                                        "submit_rpc_ms": submit_rpc_ms,
+                                    }
+                                    ext_hash = (
+                                        self._extrinsic_hash_hex(
+                                            receipt.extrinsic_hash
+                                        )
+                                        or signed_hash
+                                    )
+                                    if not _adopt_pooled_wrapper(
+                                        ext_hash, outer_nonce, submit_block
+                                    ):
+                                        # Accepted bytes belong to a hash we already
+                                        # declared missed — stop the cycle.
+                                        last_exc = RuntimeError(
+                                            f"MEV submit echoed missed wrapper "
+                                            f"{str(ext_hash)[:18]}…"
+                                        )
                                         ban_abort = True
                                         break
-                                elif _is_transient_rpc_error(
-                                    exc
-                                ) or _is_stale_nonce_error(exc):
-                                    last_exc = exc
-                                    self._reconnect()
-                                    self._reconcile_nonce_after_mev_failure(
-                                        signer_addr
-                                    )
-                                else:
-                                    self._reconcile_nonce_after_mev_failure(
-                                        signer_addr
-                                    )
-                                    raise
+                                    # Already pinned with signed_hash; only re-pin if
+                                    # the node echoed a different extrinsic hash.
+                                    if (
+                                        ext_hash
+                                        and signed_hash
+                                        and _norm_extrinsic_hash(ext_hash)
+                                        != _norm_extrinsic_hash(signed_hash)
+                                    ):
+                                        pin_after_accept = True
+                                    else:
+                                        pin_after_accept = False
+                                except Exception as exc:
+                                    err = str(exc).lower()
+                                    last_attempt_block = int(head_block)
+                                    if (
+                                        "already imported" in err
+                                        or _is_temporarily_banned_error(exc)
+                                    ):
+                                        pending_hash = self._find_pending_wrapper_hash(
+                                            signer_addr, outer_nonce
+                                        )
+                                        if (
+                                            not pending_hash
+                                            and last_pool_hash
+                                            and last_pool_nonce is not None
+                                            and int(last_pool_nonce) == int(outer_nonce)
+                                            and _norm_extrinsic_hash(last_pool_hash)
+                                            not in missed_wrapper_hashes
+                                        ):
+                                            pending_hash = last_pool_hash
+                                        adopted = False
+                                        if pending_hash:
+                                            adopted = _adopt_pooled_wrapper(
+                                                pending_hash,
+                                                outer_nonce,
+                                                last_pool_submit_block
+                                                if last_pool_submit_block is not None
+                                                else head_block,
+                                            )
+                                        if not adopted:
+                                            # 1012 / missed-hash — do NOT re-wait or
+                                            # resign into the same banned wrapper.
+                                            last_exc = exc
+                                            self._invalidate_mev_sign_caches()
+                                            ban_abort = True
+                                            break
+                                        pin_after_accept = True
+                                    elif _is_transient_rpc_error(
+                                        exc
+                                    ) or _is_stale_nonce_error(exc):
+                                        last_exc = exc
+                                        self._reconnect()
+                                        self._reconcile_nonce_after_mev_failure(
+                                            signer_addr
+                                        )
+                                    else:
+                                        self._reconcile_nonce_after_mev_failure(
+                                            signer_addr
+                                        )
+                                        raise
+
+                        # Pin the instant accept returns — before tip-retry / confirm.
+                        # Fire-and-forget WS; never wait on author_pendingExtrinsics.
+                        if pin_after_accept and wrapper_accepted and ext_hash:
+                            self._pin_mev_mempool(
+                                ext_hash,
+                                signer_addr,
+                                use_proxy=bool(use_proxy),
+                                hint=mempool_hint,
+                            )
 
                     if ban_abort or wrapper_accepted or past_window_retry:
                         break
@@ -4005,15 +4612,6 @@ class StakeSubmitService:
                     if submit_round >= max_submit_rounds:
                         break
                     continue
-
-                # Real hash, already accepted by the node — show in mempool now.
-                # Do NOT wait for confirm or the next author_pendingExtrinsics poll.
-                self._pin_mev_mempool(
-                    ext_hash,
-                    signer_addr,
-                    use_proxy=bool(use_proxy),
-                    hint=mempool_hint,
-                )
 
                 status, wrapper_success, incl_block, fail_detail = (
                     self._resolve_mev_wrapper(
@@ -4981,6 +5579,9 @@ class StakeSubmitService:
             last_seen_seq = self._block_seq
         while not self._portfolio_stop.is_set():
             try:
+                if self.mev_scale_quiet():
+                    self._portfolio_stop.wait(0.05)
+                    continue
                 # Backward compatibility: if refresh sec is explicitly set (>0), use timer mode.
                 if self._portfolio_refresh_sec > 0:
                     snap = self._fetch_wallet_portfolio_once()
@@ -5563,20 +6164,33 @@ class StakeSubmitService:
             raise RuntimeError("amount_tao must be > 0")
         slippage_pct = self._effective_slippage_pct(slippage_pct, mev_protection)
         signer_kp, signer_addr = self._signer_for(use_proxy)
-        call, limit_price, px, price_block = self._compose_add_stake_limit_call(
-            int(netuid),
-            int(amount_rao),
-            slippage_pct,
-            bool(use_proxy),
-            hotkey_addr,
-            alpha_price_tao_hint=alpha_price_tao_hint,
-            via="submit" if mev_protection else "read",
-        )
         if mev_protection:
+            # Price outside submit lock; SCALE compose overlaps soft-window inside
+            # _submit_with_mev_retry (do not compose before the wait).
+            t_mev0 = time.perf_counter()
+            limit_price, px, price_block = self._limit_price_rao(
+                int(netuid),
+                slippage_pct,
+                side="add",
+                alpha_price_tao_hint=alpha_price_tao_hint,
+            )
+            params = {
+                "hotkey": hotkey_addr,
+                "netuid": int(netuid),
+                "amount_staked": int(amount_rao),
+                "limit_price": int(limit_price),
+                "allow_partial": False,
+            }
+
+            def _mev_add_factory():
+                return self._compose_mev_wrapped_stake_call(
+                    "add_stake_limit", params, bool(use_proxy)
+                )
+
             tx = self._submit_with_mev_retry(
                 signer_kp,
                 signer_addr,
-                call,
+                call=None,
                 use_proxy=bool(use_proxy),
                 netuid=int(netuid),
                 mev_confirm_event="StakeAdded",
@@ -5586,8 +6200,19 @@ class StakeSubmitService:
                     "slippage_pct": float(slippage_pct),
                     "row_type": "add",
                 },
+                clock_start=t_mev0,
+                mev_call_factory=_mev_add_factory,
             )
         else:
+            call, limit_price, px, price_block = self._compose_add_stake_limit_call(
+                int(netuid),
+                int(amount_rao),
+                slippage_pct,
+                bool(use_proxy),
+                hotkey_addr,
+                alpha_price_tao_hint=alpha_price_tao_hint,
+                via="read",
+            )
             tx = self._submit_with_retry(signer_kp, signer_addr, call)
             with contextlib.suppress(Exception):
                 self._notify_mempool_listener(
@@ -5621,7 +6246,17 @@ class StakeSubmitService:
             "tx_hash": tx["hash"],
             "nonce": tx["nonce"],
             "materials_ms": tx.get("materials_ms"),
+            "soft_window_wait_ms": tx.get("soft_window_wait_ms"),
             "pool_submit_latency_ms": tx.get("pool_submit_latency_ms"),
+            "compose_ms": tx.get("compose_ms"),
+            "prep_ms": tx.get("prep_ms"),
+            "lock_sign_ms": tx.get("lock_sign_ms"),
+            "sign_ms": tx.get("sign_ms"),
+            "inner_sign_ms": tx.get("inner_sign_ms"),
+            "outer_sign_ms": tx.get("outer_sign_ms"),
+            "outer_compose_ms": tx.get("outer_compose_ms"),
+            "encrypt_ms": tx.get("encrypt_ms"),
+            "submit_rpc_ms": tx.get("submit_rpc_ms"),
             "submit_latency_ms": tx.get("submit_latency_ms"),
             "submit_attempt": tx.get("attempt"),
             "submit_mode": tx.get("mode", "proxy" if use_proxy else "default"),
@@ -5642,11 +6277,17 @@ class StakeSubmitService:
             snapshot = self.wallet_portfolio_snapshot()
             hotkey_addr = self._resolve_remove_hotkey(netuid, snapshot=snapshot)
         signer_kp, signer_addr = self._signer_for(use_proxy)
+        t_mev0 = time.perf_counter() if mev_protection else None
         call = self._compose_remove_full_call(
             netuid,
             hotkey_addr,
             use_proxy,
             via="submit" if mev_protection else "read",
+        )
+        compose_ms = (
+            round((time.perf_counter() - t_mev0) * 1000.0, 2)
+            if t_mev0 is not None
+            else None
         )
         if mev_protection:
             self._assert_remove_full_has_stake(netuid, hotkey_addr, use_proxy=bool(use_proxy))
@@ -5662,6 +6303,8 @@ class StakeSubmitService:
                     "slippage_pct": 100.0,
                     "row_type": "remove",
                 },
+                clock_start=t_mev0,
+                compose_ms=compose_ms,
             )
         else:
             tx = self._submit_with_retry(signer_kp, signer_addr, call)
@@ -5691,7 +6334,17 @@ class StakeSubmitService:
             "tx_hash": tx["hash"],
             "nonce": tx["nonce"],
             "materials_ms": tx.get("materials_ms"),
+            "soft_window_wait_ms": tx.get("soft_window_wait_ms"),
             "pool_submit_latency_ms": tx.get("pool_submit_latency_ms"),
+            "compose_ms": tx.get("compose_ms"),
+            "prep_ms": tx.get("prep_ms"),
+            "lock_sign_ms": tx.get("lock_sign_ms"),
+            "sign_ms": tx.get("sign_ms"),
+            "inner_sign_ms": tx.get("inner_sign_ms"),
+            "outer_sign_ms": tx.get("outer_sign_ms"),
+            "outer_compose_ms": tx.get("outer_compose_ms"),
+            "encrypt_ms": tx.get("encrypt_ms"),
+            "submit_rpc_ms": tx.get("submit_rpc_ms"),
             "submit_latency_ms": tx.get("submit_latency_ms"),
             "submit_attempt": tx.get("attempt"),
             "submit_mode": tx.get("mode", "proxy" if use_proxy else "default"),
@@ -5726,24 +6379,35 @@ class StakeSubmitService:
             raise RuntimeError("amount_alpha must be > 0")
         slippage_pct = self._effective_slippage_pct(slippage_pct, mev_protection)
         signer_kp, signer_addr = self._signer_for(use_proxy)
-        call, limit_price, px, price_block = self._compose_remove_stake_limit_call(
-            int(netuid),
-            int(amount_unstaked),
-            slippage_pct,
-            bool(use_proxy),
-            hotkey_addr,
-            alpha_price_tao_hint=alpha_price_tao_hint,
-            via="submit" if mev_protection else "read",
-        )
         amount_tao_hint = None
-        if px is not None:
-            with contextlib.suppress(Exception):
-                amount_tao_hint = float(amount_alpha) * float(px)
         if mev_protection:
+            t_mev0 = time.perf_counter()
+            limit_price, px, price_block = self._limit_price_rao(
+                int(netuid),
+                slippage_pct,
+                side="remove",
+                alpha_price_tao_hint=alpha_price_tao_hint,
+            )
+            if px is not None:
+                with contextlib.suppress(Exception):
+                    amount_tao_hint = float(amount_alpha) * float(px)
+            params = {
+                "hotkey": hotkey_addr,
+                "netuid": int(netuid),
+                "amount_unstaked": int(amount_unstaked),
+                "limit_price": int(limit_price),
+                "allow_partial": False,
+            }
+
+            def _mev_remove_factory():
+                return self._compose_mev_wrapped_stake_call(
+                    "remove_stake_limit", params, bool(use_proxy)
+                )
+
             tx = self._submit_with_mev_retry(
                 signer_kp,
                 signer_addr,
-                call,
+                call=None,
                 use_proxy=bool(use_proxy),
                 netuid=int(netuid),
                 mev_confirm_event="StakeRemoved",
@@ -5753,8 +6417,22 @@ class StakeSubmitService:
                     "slippage_pct": float(slippage_pct),
                     "row_type": "remove",
                 },
+                clock_start=t_mev0,
+                mev_call_factory=_mev_remove_factory,
             )
         else:
+            call, limit_price, px, price_block = self._compose_remove_stake_limit_call(
+                int(netuid),
+                int(amount_unstaked),
+                slippage_pct,
+                bool(use_proxy),
+                hotkey_addr,
+                alpha_price_tao_hint=alpha_price_tao_hint,
+                via="read",
+            )
+            if px is not None:
+                with contextlib.suppress(Exception):
+                    amount_tao_hint = float(amount_alpha) * float(px)
             tx = self._submit_with_retry(signer_kp, signer_addr, call)
             with contextlib.suppress(Exception):
                 self._notify_mempool_listener(
@@ -5788,7 +6466,17 @@ class StakeSubmitService:
             "tx_hash": tx["hash"],
             "nonce": tx["nonce"],
             "materials_ms": tx.get("materials_ms"),
+            "soft_window_wait_ms": tx.get("soft_window_wait_ms"),
             "pool_submit_latency_ms": tx.get("pool_submit_latency_ms"),
+            "compose_ms": tx.get("compose_ms"),
+            "prep_ms": tx.get("prep_ms"),
+            "lock_sign_ms": tx.get("lock_sign_ms"),
+            "sign_ms": tx.get("sign_ms"),
+            "inner_sign_ms": tx.get("inner_sign_ms"),
+            "outer_sign_ms": tx.get("outer_sign_ms"),
+            "outer_compose_ms": tx.get("outer_compose_ms"),
+            "encrypt_ms": tx.get("encrypt_ms"),
+            "submit_rpc_ms": tx.get("submit_rpc_ms"),
             "submit_latency_ms": tx.get("submit_latency_ms"),
             "submit_attempt": tx.get("attempt"),
             "submit_mode": tx.get("mode", "proxy" if use_proxy else "default"),
@@ -5865,7 +6553,17 @@ class StakeSubmitService:
             "tx_hash": tx["hash"],
             "nonce": tx["nonce"],
             "materials_ms": tx.get("materials_ms"),
+            "soft_window_wait_ms": tx.get("soft_window_wait_ms"),
             "pool_submit_latency_ms": tx.get("pool_submit_latency_ms"),
+            "compose_ms": tx.get("compose_ms"),
+            "prep_ms": tx.get("prep_ms"),
+            "lock_sign_ms": tx.get("lock_sign_ms"),
+            "sign_ms": tx.get("sign_ms"),
+            "inner_sign_ms": tx.get("inner_sign_ms"),
+            "outer_sign_ms": tx.get("outer_sign_ms"),
+            "outer_compose_ms": tx.get("outer_compose_ms"),
+            "encrypt_ms": tx.get("encrypt_ms"),
+            "submit_rpc_ms": tx.get("submit_rpc_ms"),
             "submit_latency_ms": tx.get("submit_latency_ms"),
             "submit_attempt": tx.get("attempt"),
             "submit_mode": tx.get("mode", "proxy" if use_proxy else "default"),
@@ -6086,7 +6784,17 @@ class StakeSubmitService:
             "tx_hash": tx_hash,
             "nonce": tx["nonce"],
             "materials_ms": tx.get("materials_ms"),
+            "soft_window_wait_ms": tx.get("soft_window_wait_ms"),
             "pool_submit_latency_ms": tx.get("pool_submit_latency_ms"),
+            "compose_ms": tx.get("compose_ms"),
+            "prep_ms": tx.get("prep_ms"),
+            "lock_sign_ms": tx.get("lock_sign_ms"),
+            "sign_ms": tx.get("sign_ms"),
+            "inner_sign_ms": tx.get("inner_sign_ms"),
+            "outer_sign_ms": tx.get("outer_sign_ms"),
+            "outer_compose_ms": tx.get("outer_compose_ms"),
+            "encrypt_ms": tx.get("encrypt_ms"),
+            "submit_rpc_ms": tx.get("submit_rpc_ms"),
             "submit_latency_ms": tx.get("submit_latency_ms"),
             "submit_attempt": tx.get("attempt"),
             "submit_mode": tx.get("mode", "proxy" if use_proxy else "default"),
@@ -6151,8 +6859,15 @@ STAKE_CONFIG = load_stake_config()
 STAKE_MEV_TIMEOUT_SEC = float(
     (os.getenv("STAKE_MEV_TIMEOUT_SEC") or "360").strip() or "360"
 )
+# Dedicated pool so mempool/block to_thread work cannot queue a stake click
+# behind pendingExtrinsics decode (was invisible pre-timer delay).
+STAKE_SUBMIT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=max(2, int((os.getenv("STAKE_SUBMIT_WORKERS") or "4").strip() or "4")),
+    thread_name_prefix="stake_submit",
+)
 STAKE_SERVICE = StakeSubmitService(STAKE_CONFIG)
 atexit.register(STAKE_SERVICE.close)
+atexit.register(STAKE_SUBMIT_EXECUTOR.shutdown, wait=False)
 stake_app = FastAPI(title="Stake Submit API", version="0.1.0")
 stake_app.add_middleware(
     CORSMiddleware,
@@ -6189,8 +6904,12 @@ def verify_transfer_stake_password(payload: dict) -> str | None:
 
 async def _run_stake_submit(fn, mev_protection=False):
     timeout = STAKE_MEV_TIMEOUT_SEC if mev_protection else STAKE_CONFIG.timeout_sec
+    loop = asyncio.get_running_loop()
     try:
-        return await asyncio.wait_for(asyncio.to_thread(fn), timeout=timeout)
+        return await asyncio.wait_for(
+            loop.run_in_executor(STAKE_SUBMIT_EXECUTOR, fn),
+            timeout=timeout,
+        )
     except asyncio.TimeoutError:
         if mev_protection:
             # Stop the orphaned to_thread worker so it clears inflight/nonce.
@@ -7630,13 +8349,12 @@ def parse_args():
     )
     parser.add_argument("--host", default=(os.getenv("BACKEND_HOST") or "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.getenv("BACKEND_PORT") or "8770"))
-    # author_pendingExtrinsics: ~50ms spacing is optimal on many nodes (~20Hz).
-    # Increase MEMPOOL_POLL_INTERVAL to reduce RPC/UI churn; decrease toward 0.05
-    # for lower detection latency (default 0.05s ≈ 20 polls/sec).
+    # Default 1.0s. Faster polls (0.05–0.5) hit pending_pool -32004 often.
+    # Override with MEMPOOL_POLL_INTERVAL only if the node can sustain it.
     parser.add_argument(
         "--mempool-poll-interval",
         type=float,
-        default=float((os.getenv("MEMPOOL_POLL_INTERVAL") or "0.05").strip() or "0.05"),
+        default=float((os.getenv("MEMPOOL_POLL_INTERVAL") or "1.0").strip() or "1.0"),
     )
     parser.add_argument("--block-poll-interval", type=float, default=0.2)
     return parser.parse_args()
